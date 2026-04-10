@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  lint-and-test:
+    name: Lint & Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Lint (ruff)
+        run: ruff check src pipelines
+
+      - name: Format check (black)
+        run: black --check src pipelines
+
+      - name: Unit tests (pytest)
+        run: pytest -q --maxfail=1 --disable-warnings
+
+  smoke-run:
+    name: Pipeline smoke run
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Generate fixture dataset
+        run: |
+          mkdir -p data/raw data/processed models reports
+          python - <<'PY'
+          import numpy as np, pandas as pd
+          rng = np.random.default_rng(42)
+          n = 500
+          df = pd.DataFrame({
+              "dummy_id": np.arange(n),
+              "dim_judgement": rng.normal(size=n),
+              "dim_core_traits": rng.normal(size=n),
+              "dim_emotional_understanding": rng.normal(size=n),
+              "dim_principles": rng.normal(size=n),
+              "total_risk_score": rng.normal(size=n),
+              "risk_mitigators": rng.normal(size=n),
+              "risk_drivers": rng.normal(size=n),
+              "num_accounts_assess": rng.integers(0, 10, size=n),
+              "worst_arrears_assess": rng.integers(0, 5, size=n),
+              "age_oldest_assess": rng.integers(1, 120, size=n),
+              "num_accounts_perf": rng.integers(0, 10, size=n),
+              "highest_arrears_perf": rng.integers(0, 5, size=n),
+              "age_oldest_perf": rng.integers(1, 120, size=n),
+              "product_type": rng.choice(["Micro", "Retail"], size=n),
+              "bad": rng.binomial(1, 0.24, size=n),
+          })
+          df.to_excel("data/raw/DRA_with_simulated_credit.xlsx", index=False)
+          print("Fixture dataset written:", df.shape)
+          PY
+
+      - name: Run pipeline end-to-end
+        run: python -m pipelines.run_pipeline
+
+      - name: Verify expected artefacts
+        run: |
+          test -f data/processed/X_train.csv
+          test -f data/processed/X_test.csv
+          test -f models/scaler.pkl
+          echo "All expected artefacts present."
+
+      - name: Upload metrics as build artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-metrics-${{ github.sha }}
+          path: |
+            reports/
+            data/processed/
+          retention-days: 14

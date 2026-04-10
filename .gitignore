@@ -1,0 +1,72 @@
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# ---------- Virtual environments ----------
+.venv/
+venv/
+env/
+ENV/
+
+# ---------- IDE / OS ----------
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ---------- Secrets ----------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ---------- Data — never commit raw or processed ----------
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# Same rules apply inside archived builds
+archive/**/data/raw/*
+archive/**/data/processed/*
+
+# ---------- Model artefacts ----------
+models/*
+!models/.gitkeep
+archive/**/models/*
+
+# ---------- Generated reports ----------
+reports/*.csv
+reports/*.json
+reports/*.html
+reports/*.png
+reports/*.pdf
+!reports/.gitkeep
+archive/**/reports/*.csv
+archive/**/reports/*.json
+archive/**/reports/*.html
+archive/**/reports/*.png
+archive/**/reports/*.pdf
+
+# ---------- Scratch working files ----------
+review_report.docx
+review_report.js
+WJARR-2025-2266.pdf
+Claude fix OpenAI code/
+
+# ---------- Logs ----------
+*.log
+logs/

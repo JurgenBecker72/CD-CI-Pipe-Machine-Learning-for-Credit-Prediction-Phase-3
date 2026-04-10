@@ -1,0 +1,14 @@
+pandas>=2.0,<3.0
+numpy>=1.24,<3.0
+scikit-learn>=1.3,<2.0
+scipy>=1.10,<2.0
+openpyxl>=3.1,<4.0
+joblib>=1.3,<2.0
+matplotlib>=3.7,<4.0
+seaborn>=0.12,<1.0
+
+# Testing / CI
+pytest>=7.4,<9.0
+pytest-cov>=4.1,<6.0
+ruff>=0.3,<1.0
+black>=24.0,<26.0
