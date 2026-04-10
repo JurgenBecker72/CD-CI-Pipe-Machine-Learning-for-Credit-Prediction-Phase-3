@@ -22,42 +22,7 @@ The feature space spans four DRA dimension scores, 41 psychometric item-level sc
 
 ## Pipeline Architecture
 
-```mermaid
-flowchart TD
-    A[data/raw/DRA_with_simulated_credit.xlsx]:::data --> B[ingest.load_credit_data]
-    B --> C[preprocess.clean_column_names]
-    C --> D[preprocess.remove_ids<br/>exact-match dummy_id only]
-    D --> E[preprocess.remove_leakage<br/>drop all _perf columns]
-    E --> F[features.create_features<br/>row-wise, no cross-row stats]
-    F --> G[preprocess.encode_categorical<br/>one-hot product_type]
-    G --> H[preprocess.ensure_numeric]
-    H --> I[split.split_data<br/>70 / 10 / 20 stratified on bad]
-
-    I --> J[preprocess.handle_missing<br/>medians fit on TRAIN only]
-    J --> K[preprocess.scale_features<br/>StandardScaler fit on TRAIN]
-
-    K --> L[train_scorecard<br/>LR + CalibratedClassifierCV]
-    K --> M[train_rf<br/>RandomForest benchmark]
-
-    L --> N[probability_to_score<br/>base 600 / PDO 50]
-    N --> O[qcut into A–E bands]
-
-    L --> P[evaluate.auc_gini_ks]
-    M --> P
-
-    O --> Q[reports/scorecard_band_summary.csv]
-    P --> R[reports/metrics.json]
-    K --> S[data/processed/X_*.csv, y_*.csv]
-    L --> T[models/scaler.pkl + calibrated_lr.pkl]
-    M --> U[models/random_forest.pkl]
-
-    classDef data fill:#e8f4fd,stroke:#1f6feb,stroke-width:2px,color:#000
-    classDef fit fill:#fff4e6,stroke:#d97706,stroke-width:2px,color:#000
-    classDef out fill:#e8f7ee,stroke:#16a34a,stroke-width:2px,color:#000
-    class A data
-    class J,K,L,M fit
-    class Q,R,S,T,U out
-```
+![Pipeline: Runtime Architecture](docs/images/pipeline_architecture.png)
 
 **The critical design rule:** every step that learns from the data — imputation medians, scaler statistics, model fitting, calibration — happens **after** the train / validation / test split and is fit on the training slice only. This prevents the subtle information leakage that inflates offline metrics and then destroys a model in production.
 
@@ -193,26 +158,7 @@ The test suite should cover, at minimum:
 
 This repository is structured so the path from a commit to a deployed model is mechanical, not heroic. The stages below describe the CI/CD pipeline the project targets, and [`.github/workflows/ci.yml`](.github/workflows/ci.yml) implements the first three of them today.
 
-```mermaid
-flowchart LR
-    A[git push] --> B[Lint<br/>ruff + black]
-    B --> C[Unit tests<br/>pytest]
-    C --> D[Smoke run<br/>python -m pipelines.run_pipeline<br/>on fixture data]
-    D --> E[Train on latest<br/>production data]
-    E --> F[Model validation<br/>AUC / KS / PSI gates]
-    F -->|pass| G[Register model<br/>MLflow / S3]
-    F -->|fail| X[Block + alert]
-    G --> H[Deploy scoring API<br/>FastAPI container]
-    H --> I[Shadow traffic<br/>challenger vs champion]
-    I --> J[Promote to production]
-    J --> K[Monitoring<br/>PSI drift + bad-rate watch]
-    K -->|drift| E
-
-    classDef gate fill:#fff4e6,stroke:#d97706,stroke-width:2px,color:#000
-    classDef deploy fill:#e8f7ee,stroke:#16a34a,stroke-width:2px,color:#000
-    class B,C,D,F gate
-    class G,H,J deploy
-```
+![CI/CD: Production Roadmap](docs/images/cicd_roadmap.png)
 
 **Stage 1 — Continuous Integration (implemented).** Every push runs linting, unit tests, and a smoke-run of the pipeline on a small fixture dataset. No merge to `main` without a green build.
 
