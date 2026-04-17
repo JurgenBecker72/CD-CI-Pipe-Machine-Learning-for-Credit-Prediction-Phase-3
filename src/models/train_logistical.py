@@ -3,7 +3,7 @@
 # ============================================================
 
 # Data steps
-# from src.data.ingest import load_credit_data   # not needed here
+from src.data.ingest import load_credit_data  
 from src.data.preprocess import preprocess_data
 from src.data.split import split_data
 
