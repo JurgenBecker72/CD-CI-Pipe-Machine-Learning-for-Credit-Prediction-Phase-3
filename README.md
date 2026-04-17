@@ -38,38 +38,52 @@ This discipline ensures that the validation and test data remain completely unse
 
 ## Quick Start
 
-### 1. Set up the environment
+Getting the pipeline up and running is straightforward and designed for reproducibility.
+
+### 1. Clone the repository and set up the environment
 
 ```bash
 git clone https://github.com/<you>/Machine-Learning-For-Credit-Prediction-Phase-3.git
 cd Machine-Learning-For-Credit-Prediction-Phase-3
 
 python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
+source .venv/bin/activate   # On Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 2. Place the raw data
+### 2. Add the raw data
 
-Drop `DRA_with_simulated_credit.xlsx` into `data/raw/`. The file is deliberately **not** checked into the repository.
+Place the file `DRA_with_simulated_credit.xlsx` into the `data/raw/` folder. 
+
+This file is deliberately not committed to the repository to protect privacy. Without it, the pipeline cannot run. 
 
 ### 3. Run the pipeline
 
-```bash
-# (a) Preprocess only — writes data/processed/*.csv and models/scaler.pkl
-python -m src.data.preprocess
+You have two main options: 
 
+**Preprocessing only** (useful for inspecting cleaned data and splits):
+
+```bash
+# (a) Preprocess only 
+python -m src.data.preprocess
+```
+This generates processed datasets in data/processed/ and saves the fitted scaler in models/scaler.pkl. 
+
+**Full end-to-end pipeline** (recommended):
+
+```bash
 # (b) Full pipeline — scorecard + random-forest benchmark
 python -m pipelines.run_pipeline
 ```
+This runs preprocessing and trains the calibrated logistic regression scorecard (with A–E risk bands) and the Random Forest benchmark. It also produces evaluation metrics and band summaries in the reports/ folder.
 
-Both commands must be run from the project root so the `src.*` imports resolve.
+Always run these commands from the project root directory so that the src.* and pipelines.* imports resolve correctly.
 
 ---
 
 ## Expected Output
 
-Running the full pipeline produces:
+After successfully running the full pipeline, the following output is produced:
 
 | Location | Artefact | Description |
 |---|---|---|
