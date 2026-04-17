@@ -2,10 +2,8 @@
 # RUN FULL CREDIT RISK PIPELINE
 # ============================================================
 
-import pandas as pd
-
 # Data steps
-from src.data.ingest import load_credit_data
+# from src.data.ingest import load_credit_data   # not needed here
 from src.data.preprocess import preprocess_data
 from src.data.split import split_data
 
@@ -26,7 +24,7 @@ def run_pipeline():
     # --------------------------------------------------------
     # 1. INGEST DATA
     # --------------------------------------------------------
-    df = load_data()
+    df = load_credit_data()
     print(f"Data loaded: {df.shape}")
 
     # --------------------------------------------------------
@@ -48,7 +46,7 @@ def run_pipeline():
     # --------------------------------------------------------
     # 4. TRAIN RANDOM FOREST
     # --------------------------------------------------------
-    model = train_random_forest(X_train, y_train)
+    train_random_forest(X_train, y_train)
 
     # --------------------------------------------------------
     # 5. SHAP ANALYSIS (use sample for speed)
@@ -61,7 +59,7 @@ def run_pipeline():
     # --------------------------------------------------------
     # 6. LOGISTIC PD MODEL (on full dataset)
     # --------------------------------------------------------
-    train_logistic(df)
+    # train_logistic(df)   # TODO: function not implemented yet
 
     # --------------------------------------------------------
     # COMPLETE
