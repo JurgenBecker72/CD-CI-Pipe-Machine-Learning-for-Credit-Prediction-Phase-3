@@ -1,4 +1,3 @@
-import numpy as np
 from sklearn.metrics import roc_auc_score
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
@@ -7,7 +6,7 @@ from sklearn.ensemble import RandomForestClassifier
 try:
     from xgboost import XGBClassifier
     xgb_available = True
-except:
+except ImportError:
     xgb_available = False
 
 
