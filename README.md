@@ -107,6 +107,8 @@ Single-feature AUCs printed by the leakage diagnostic should all fall in roughly
 
 ## Project Structure
 
+The pipeline follows a structured, leakage-proof workflow specifically designed for credit risk applications where interpretability and regulatory acceptance are as important as predictive power.
+
 ```
 Machine-Learning-For-Credit-Prediction-Phase-3/
 ├── .github/
@@ -182,46 +184,46 @@ This repository is structured so the path from a commit to a deployed model is m
 
 ![CI/CD: Production Roadmap](docs/images/cicd_roadmap.png)
 
-**Stage 1 — Continuous Integration (Implemented).** 
+### Stage 1 — Continuous Integration (Implemented) 
 
 Every push to `main` or `develop`, and every pull request, runs linting (Ruff), formatting checks (Black), unit tests (pytest), and a smoke-run. This configuration represents the foundation of a production-ready machine learning pipeline and ensures code quality, consistency, and reproducibility from day one.
 
-**Lint & Test** 
+**1. Lint & Test:** 
 - Linting with Ruff: Checks for common coding issues, unused imports, undefined variables, and potential bugs.
 - Formatting with Black: Enforces a consistent code style across all Python files in `src/` and `pipelines/`.
 - Unit Tests with pytest: Runs automated tests to verify that individual components (preprocessing, splitting, etc.) work as expected.
 
 The tests run on three different Python versions simultaneously. This gives confidence that the pipeline will behave consistently whether someone runs it on Python 3.10, 3.11, or 3.12. 
 
-**Smoke Run (End-to-End Pipeline Test)** 
+**2. Smoke Run (End-to-End Pipeline Test):** 
 
 After the linting and unit tests pass, a smoke test runs the entire pipeline from start to finish using a small generated dataset. This smoke test is extremely useful because it catches integration issues early. No merge to `main` is allowed without a green build.
 
-**Stage 2 — Continuous Training.** 
+### Stage 2 — Continuous Training
 
 A scheduled workflow (daily or weekly) re-runs the full pipeline on the latest production data snapshot and writes metrics to a tracking store. This requires only minor extensions to the existing `ci.yml` plus secure handling of production data.
 
-**Stage 3 — Model Validation Gate.** 
+### Stage 3 — Model Validation Gate
 
 Before registration, every new model must pass hard gates: AUC and KS above defined floors, Population Stability Index (PSI) below a ceiling versus the champion model, and strict monotonicity in the A–E risk bands.
 
-**Stage 4 — Model Registry.** 
+### Stage 4 — Model Registry
 
 Passing models are versioned with a git SHA, data hash, and full metrics. The scoring service always consumes artefacts from the registry — never a `.pkl` file from a developer's laptop.
 
-**Stage 5 — Scoring Service.** 
+### Stage 5 — Scoring Service
 
 A FastAPI container loads the registered model and exposes a `/score` endpoint. It returns PD, final score, and risk band. The container is built and pushed by CI on every tagged release.
 
-**Stage 6 — Shadow Traffic.** 
+### Stage 6 — Shadow Traffic 
 
 New models run in parallel with the champion on live traffic. Predictions are logged for comparison, but customer decisions still use the current champion.
 
-**Stage 7 — Promotion.** 
+### Stage 7 — Promotion 
 
 After the shadow period, a human review compares challenger vs champion metrics. Promotion simply updates a pointer in the model registry — no code changes or service restarts are required.
 
-**Stage 8 — Monitoring.** 
+### Stage 8 — Monitoring
 
 Ongoing tracking of population stability, feature drift, realised bad rate vs predicted PD, and A–E band stability. Significant drift automatically triggers Stage 2 (retraining). 
 
@@ -251,6 +253,12 @@ By building strong foundations (leakage-proof pipeline + CI/CD), we make the jou
 Raw data and model binaries in git are the single fastest way to make a repository unclonable and a team unhappy.
 
 ---
+
+## References 
+
+Keating, L. (2021). Automated Feature Engineering in Ensemble Credit Scoring Pipelines. 
+
+Roland, A. (2025). Machine learning for credit scoring and loan default prediction using behavioral and transactional financial data. World Journal of Advanced Research and Reviews, 26(3), 884-904. https://doi.org/10.30574/wjarr.2025.26.3.2266 
 
 ## License
 
