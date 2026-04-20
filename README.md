@@ -178,11 +178,14 @@ The test suite should cover, at minimum:
 
 ## Production Roadmap — CI/CD
 
-This repository is structured so the path from a commit to a deployed model is mechanical, not heroic. The stages below describe the CI/CD pipeline the project targets, and [`.github/workflows/ci.yml`](.github/workflows/ci.yml) implements the first three of them today.
+This repository is structured so the path from a commit to a deployed model is mechanical, not heroic. The stages below describe the full CI/CD pipeline the project targets. The file [`.github/workflows/ci.yml`](.github/workflows/ci.yml) already implements the first three stages today.
 
 ![CI/CD: Production Roadmap](docs/images/cicd_roadmap.png)
 
-**Stage 1 — Continuous Integration (implemented).** Every push runs linting, unit tests, and a smoke-run of the pipeline on a small fixture dataset. No merge to `main` without a green build.
+**Stage 1 — Continuous Integration (implemented).** 
+Every push to `main` or `develop`, and every pull request, runs linting, formatting checks, unit tests, and a smoke-run. The smoke test generates a small fixture dataset and executes the full end-to-end pipeline. No merge to `main` is allowed without a green build.
+
+This foundation ensures code quality, consistency, and basic reproducibility from day one.
 
 **Stage 2 — Continuous Training.** On a cadence (daily or weekly), a scheduled workflow re-runs the full pipeline on the latest production snapshot and writes metrics to a tracking store. This is cron in `ci.yml` plus an `environment` for production secrets.
 
