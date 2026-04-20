@@ -182,11 +182,20 @@ This repository is structured so the path from a commit to a deployed model is m
 
 ![CI/CD: Production Roadmap](docs/images/cicd_roadmap.png)
 
-**Stage 1 — Continuous Integration (implemented).** 
+**Stage 1 — Continuous Integration (Implemented).** 
 
-Every push to `main` or `develop`, and every pull request, runs linting (Ruff), formatting checks (Black), unit tests (pytest) across Python 3.10–3.12, and a smoke-run. The smoke test generates a small fixture dataset and executes the full end-to-end pipeline (ingestion → preprocessing → split → training → outputs). No merge to `main` is allowed without a green build.
+Every push to `main` or `develop`, and every pull request, runs linting (Ruff), formatting checks (Black), unit tests (pytest), and a smoke-run. This configuration represents the foundation of a production-ready machine learning pipeline and ensures code quality, consistency, and reproducibility from day one.
 
-This foundation ensures code quality, consistency, and basic reproducibility from day one.
+**Lint & Test** 
+- Linting with Ruff: Checks for common coding issues, unused imports, undefined variables, and potential bugs.
+- Formatting with Black: Enforces a consistent code style across all Python files in `src/` and `pipelines/`.
+- Unit Tests with pytest: Runs automated tests to verify that individual components (preprocessing, splitting, etc.) work as expected.
+
+The tests run on three different Python versions simultaneously. This gives confidence that the pipeline will behave consistently whether someone runs it on Python 3.10, 3.11, or 3.12. 
+
+**Smoke Run (End-to-End Pipeline Test)** 
+
+After the linting and unit tests pass, a smoke test runs the entire pipeline from start to finish using a small generated dataset. This smoke test is extremely useful because it catches integration issues early. No merge to `main` is allowed without a green build.
 
 **Stage 2 — Continuous Training.** 
 
