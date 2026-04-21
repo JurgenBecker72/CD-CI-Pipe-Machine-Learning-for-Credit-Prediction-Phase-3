@@ -257,6 +257,17 @@ This is the skeleton that customers and regulators are buying: not just one good
 By building strong foundations (leakage-proof pipeline + CI/CD), we make the journey to full production deployment straightforward and low-risk.
 
 ---
+## Conclusion 
+
+In this project, we deployed the ML-informed Logistic Regression — a hybrid development methodology that uses ML techniques during the feature engineering phase to discover which non-linear effects and feature interactions carry genuine predictive signal. Those discovered patterns were then encoded as explicit, fixed terms inside a production logistic regression, preserving full coefficient transparency and regulatory auditability. 
+
+In principle, this approach gives us the best of both worlds: The feature engineering intelligence of ML combined with the regulatory defensibility of a traditional scorecard. The resulting model is static (every predictor carries a fixed, interpretable coefficient) and thus capable of withstanding regulatory review or legal challenge — a requirement that purely dynamic ML models cannot satisfy in most regulated lending environments.
+
+In practice, however, the richness we mined from the ML layer was significantly eroded when we moved into the logistic regression decision layer due to collinearity (substantial overlapping variance) between psychometric variables. This means that when we introduced the ML-derived interaction terms and non-linear composites alongside the main effects, the model became unstable. The only path to a stable model was to strip the feature set back to main effects, removing most of the engineered variables the ML phase had identified as predictive. Consequently, the richer representation of borrower behaviour was effectively lost in the translation to a stable LR.
+
+To address the trade-off between feature richness and model stability, in the final phase of the project we use the same dataset and ML-derived feature universe. We then apply various statistical transformations (e.g., centering and standardisation, residualisation, and binning) to the feature set before it enters the logistic regression. The goal of the fourth phase of the project is to explore how psychometric signals can be transformed into a regulator-ready decision layer while simultaneously maintaining feature richness associated with ML techniques. 
+
+---
 
 ## What Gets Committed to Git
 
@@ -278,16 +289,6 @@ By building strong foundations (leakage-proof pipeline + CI/CD), we make the jou
 Raw data and model binaries in git are the single fastest way to make a repository unclonable and a team unhappy.
 
 ---
-## Conclusion 
-
-In this project, we deployed the ML-informed Logistic Regression — a hybrid development methodology that uses ML techniques during the feature engineering phase to discover which non-linear effects and feature interactions carry genuine predictive signal. Those discovered patterns were then encoded as explicit, fixed terms inside a production logistic regression, preserving full coefficient transparency and regulatory auditability. 
-
-In principle, this approach gives us the best of both worlds: The feature engineering intelligence of ML combined with the regulatory defensibility of a traditional scorecard. The resulting model is static (every predictor carries a fixed, interpretable coefficient) and thus capable of withstanding regulatory review or legal challenge — a requirement that purely dynamic ML models cannot satisfy in most regulated lending environments.
-
-In practice, however, the richness we mined from the ML layer was significantly eroded when we moved into the logistic regression decision layer due to collinearity (substantial overlapping variance) between psychometric variables. This means that when we introduced the ML-derived interaction terms and non-linear composites alongside the main effects, the model became unstable. The only path to a stable model was to strip the feature set back to main effects, removing most of the engineered variables the ML phase had identified as predictive. Consequently, the richer representation of borrower behaviour was effectively lost in the translation to a stable LR.
-
-To address the trade-off between feature richness and model stability, in the final phase of the project we use the same dataset and ML-derived feature universe. We then apply various statistical transformations (e.g., centering and standardisation, residualisation, and binning) to the feature set before it enters the logistic regression. The goal of the fourth phase of the project is to explore how psychometric signals can be transformed into a regulator-ready decision layer while simultaneously maintaining feature richness associated with ML techniques. 
-
 ## References 
 
 Keating, L. (2021). Automated Feature Engineering in Ensemble Credit Scoring Pipelines. 
