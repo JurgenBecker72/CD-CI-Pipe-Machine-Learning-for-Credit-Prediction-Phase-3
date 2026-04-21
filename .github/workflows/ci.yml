@@ -90,7 +90,10 @@ jobs:
           print("Fixture dataset written:", df.shape)
           PY
 
-      - name: Run pipeline end-to-end
+      - name: Run preprocessing (writes X_train/X_val/X_test + scaler.pkl)
+        run: python -m src.data.preprocess
+
+      - name: Run pipeline end-to-end (scorecard + RF benchmark)
         run: python -m pipelines.run_pipeline
 
       - name: Verify expected artefacts
