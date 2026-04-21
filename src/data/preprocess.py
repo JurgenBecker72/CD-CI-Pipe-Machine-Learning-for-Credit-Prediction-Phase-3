@@ -20,6 +20,7 @@ from src.config import (
     RANDOM_STATE,
 )
 
+
 # =========================================================
 # STEP 2: LOAD DATA
 # =========================================================
@@ -29,6 +30,7 @@ def load_data():
     """
     df = pd.read_excel("data/raw/DRA_with_simulated_credit.xlsx")
     return df
+
 
 # =========================================================
 # STEP 3: CLEAN COLUMN NAMES
@@ -40,13 +42,9 @@ def clean_column_names(df):
     - lowercase
     - replace spaces with underscores
     """
-    df.columns = (
-        df.columns
-        .str.strip()
-        .str.lower()
-        .str.replace(" ", "_")
-    )
+    df.columns = df.columns.str.strip().str.lower().str.replace(" ", "_")
     return df
+
 
 # =========================================================
 # STEP 4: REMOVE ID / IDENTIFIER COLUMNS
@@ -63,6 +61,7 @@ def remove_ids(df):
     id_cols = [c for c in ID_COLUMNS if c in df.columns]
     print(f"Removing ID columns: {id_cols}")
     return df.drop(columns=id_cols)
+
 
 # =========================================================
 # STEP 5: REMOVE LEAKAGE VARIABLES
@@ -81,6 +80,7 @@ def remove_leakage(df):
     existing = [col for col in LEAKAGE_COLUMNS if col in df.columns]
     print(f"Removing leakage columns: {existing}")
     return df.drop(columns=existing)
+
 
 # =========================================================
 # STEP 6: FEATURE ENGINEERING (row-wise only, no leakage)
@@ -104,6 +104,7 @@ def create_features(df):
 
     return df
 
+
 # =========================================================
 # STEP 7: ENCODE CATEGORICAL VARIABLES
 # =========================================================
@@ -120,6 +121,7 @@ def encode_categorical(df):
 
     return df
 
+
 # =========================================================
 # STEP 8: FINAL NUMERIC SAFETY CHECK
 # =========================================================
@@ -133,6 +135,7 @@ def ensure_numeric(df):
 
     return df
 
+
 # =========================================================
 # STEP 9: SPLIT FEATURES AND TARGET
 # =========================================================
@@ -140,6 +143,7 @@ def split_xy(df):
     X = df.drop(columns=[TARGET])
     y = df[TARGET]
     return X, y
+
 
 # =========================================================
 # STEP 10: TRAIN / VALIDATION / TEST SPLIT
@@ -164,6 +168,7 @@ def split_data(X, y):
     print(f"Test: {X_test.shape}")
 
     return X_train, X_val, X_test, y_train, y_val, y_test
+
 
 # =========================================================
 # STEP 11: HANDLE MISSING VALUES (fit on TRAIN only)
@@ -201,6 +206,7 @@ def handle_missing(X_train, X_val, X_test):
 
     return X_train, X_val, X_test
 
+
 # =========================================================
 # STEP 12: SCALE FEATURES (fit on TRAIN only)
 # =========================================================
@@ -214,13 +220,18 @@ def scale_features(X_train, X_val, X_test):
     X_val_scaled = scaler.transform(X_val)
     X_test_scaled = scaler.transform(X_test)
 
-    X_train_scaled = pd.DataFrame(X_train_scaled, columns=X_train.columns, index=X_train.index)
+    X_train_scaled = pd.DataFrame(
+        X_train_scaled, columns=X_train.columns, index=X_train.index
+    )
     X_val_scaled = pd.DataFrame(X_val_scaled, columns=X_val.columns, index=X_val.index)
-    X_test_scaled = pd.DataFrame(X_test_scaled, columns=X_test.columns, index=X_test.index)
+    X_test_scaled = pd.DataFrame(
+        X_test_scaled, columns=X_test.columns, index=X_test.index
+    )
 
     joblib.dump(scaler, "models/scaler.pkl")
 
     return X_train_scaled, X_val_scaled, X_test_scaled
+
 
 # =========================================================
 # STEP 13: LEAKAGE DIAGNOSTIC
@@ -240,6 +251,7 @@ def check_single_feature_auc(X, y):
         except Exception:
             pass
 
+
 # =========================================================
 # STEP 14: SAVE OUTPUT DATA
 # =========================================================
@@ -251,6 +263,7 @@ def save_data(X_train, X_val, X_test, y_train, y_val, y_test):
     y_train.to_csv("data/processed/y_train.csv", index=False)
     y_val.to_csv("data/processed/y_val.csv", index=False)
     y_test.to_csv("data/processed/y_test.csv", index=False)
+
 
 # =========================================================
 # STEP 15: MAIN PIPELINE FUNCTION
@@ -299,11 +312,13 @@ def main():
 
     print("\nPreprocessing complete.")
 
+
 # =========================================================
 # PIPELINE ENTRY POINT
 # =========================================================
 def preprocess_data():
     main()
+
 
 # =========================================================
 # RUN STANDALONE

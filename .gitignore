@@ -70,3 +70,6 @@ Claude fix OpenAI code/
 # ---------- Logs ----------
 *.log
 logs/
+
+# Cowork / Claude session artifacts
+Claude/

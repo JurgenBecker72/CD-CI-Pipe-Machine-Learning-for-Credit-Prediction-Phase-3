@@ -1,0 +1,37 @@
+[tool.black]
+line-length = 100
+target-version = ["py310", "py311", "py312"]
+# Keep black scoped to real source, skip archives and generated data
+extend-exclude = '''
+/(
+    archive
+  | data
+  | models
+  | reports
+  | \.venv
+  | __pycache__
+)/
+'''
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["archive", "data", "models", "reports", ".venv"]
+
+[tool.ruff.lint]
+# Start conservative: pyflakes + pycodestyle + isort + common bug-finders.
+# Widen later once the baseline is clean.
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = [
+    "E501",  # line-length handled by black
+    "B008",  # function call in argument default — common with typer/FastAPI-style APIs
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]  # re-exports
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-q --disable-warnings"
+testpaths = ["tests", "pipelines"]
+python_files = ["test_*.py", "*_test.py"]

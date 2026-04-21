@@ -1,5 +1,5 @@
 from src.data.ingest import load_credit_data
-from src.data.preprocess import standardize_column_names, handle_missing_values
+from src.data.preprocess import handle_missing_values, standardize_column_names
 
 
 def main():

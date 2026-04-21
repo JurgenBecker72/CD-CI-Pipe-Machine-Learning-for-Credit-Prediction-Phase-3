@@ -2,19 +2,28 @@
 # FEATURE ENGINEERING
 # ============================================================
 
+
 def create_features(df):
 
     # ===== FLAGS =====
     if "total_risk_score" in df.columns:
-        df["high_risk_flag"] = (df["total_risk_score"] > df["total_risk_score"].quantile(0.7)).astype(int)
-        df["low_risk_flag"] = (df["total_risk_score"] < df["total_risk_score"].quantile(0.3)).astype(int)
+        df["high_risk_flag"] = (
+            df["total_risk_score"] > df["total_risk_score"].quantile(0.7)
+        ).astype(int)
+        df["low_risk_flag"] = (
+            df["total_risk_score"] < df["total_risk_score"].quantile(0.3)
+        ).astype(int)
 
     if "r_ho_em2_co" in df.columns:
-        df["high_emotional_flag"] = (df["r_ho_em2_co"] > df["r_ho_em2_co"].quantile(0.7)).astype(int)
+        df["high_emotional_flag"] = (df["r_ho_em2_co"] > df["r_ho_em2_co"].quantile(0.7)).astype(
+            int
+        )
 
     if "r_ho_vi4_st" in df.columns:
         df["low_stability_flag"] = (df["r_ho_vi4_st"] < df["r_ho_vi4_st"].quantile(0.3)).astype(int)
-        df["high_stability_flag"] = (df["r_ho_vi4_st"] > df["r_ho_vi4_st"].quantile(0.7)).astype(int)
+        df["high_stability_flag"] = (df["r_ho_vi4_st"] > df["r_ho_vi4_st"].quantile(0.7)).astype(
+            int
+        )
 
     # ===== RISK STRUCTURE =====
     if "risk_drivers" in df.columns and "risk_mitigators" in df.columns:

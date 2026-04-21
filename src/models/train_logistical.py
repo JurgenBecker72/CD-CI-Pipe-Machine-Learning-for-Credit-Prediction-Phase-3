@@ -3,7 +3,7 @@
 # ============================================================
 
 # Data steps
-from src.data.ingest import load_credit_data  
+from src.data.ingest import load_credit_data
 from src.data.preprocess import preprocess_data
 from src.data.split import split_data
 
@@ -16,6 +16,7 @@ from src.models.train_rf import train_random_forest
 # ============================================================
 # MAIN PIPELINE
 # ============================================================
+
 
 def run_pipeline():
 
@@ -51,10 +52,10 @@ def run_pipeline():
     # --------------------------------------------------------
     # 5. SHAP ANALYSIS (use sample for speed)
     # --------------------------------------------------------
-    #X_sample = X_test.sample(min(500, len(X_test)), random_state=42)
+    # X_sample = X_test.sample(min(500, len(X_test)), random_state=42)
 
-    #run_shap(model, X_sample)
-    #run_shap_interactions(model, X_sample)
+    # run_shap(model, X_sample)
+    # run_shap_interactions(model, X_sample)
 
     # --------------------------------------------------------
     # 6. LOGISTIC PD MODEL (on full dataset)

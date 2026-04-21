@@ -33,17 +33,47 @@ DRA_DIMENSIONS = [
 
 # Psychometric item-level features (HO / SF blocks)
 DRA_ITEMS = [
-    "r_ho_tc1_ag", "r_ho_em2_co", "r_ho_tc3_di", "r_ho_tc4_so",
-    "r_ho_vi1_cn", "r_ho_vi5_ss", "r_ho_em3_sp", "r_ho_vi3_ac",
-    "r_ho_em1_es", "r_ho_tc2_oc", "r_ho_vi4_st", "r_ho_vi2_cv",
+    "r_ho_tc1_ag",
+    "r_ho_em2_co",
+    "r_ho_tc3_di",
+    "r_ho_tc4_so",
+    "r_ho_vi1_cn",
+    "r_ho_vi5_ss",
+    "r_ho_em3_sp",
+    "r_ho_vi3_ac",
+    "r_ho_em1_es",
+    "r_ho_tc2_oc",
+    "r_ho_vi4_st",
+    "r_ho_vi2_cv",
     "r_ho_jd_cm",
-    "r_sf_em1_ad", "r_sf_em2_af", "r_sf_tc1_al", "r_sf_tc11_as",
-    "r_sf_em3_bo", "r_sf_tc2_cm", "r_sf_em6_cb", "r_sf_em7_cp",
-    "r_sf_tc4_du", "r_sf_tc3_ex", "r_sf_tc5_el", "r_sf_vi1_fv",
-    "r_sf_vi7_he", "r_sf_em8_im", "r_sf_vi5_ma", "r_sf_em4_mi",
-    "r_sf_tc6_or", "r_sf_tc7_pe", "r_sf_vi6_po", "r_sf_dm1_ps",
-    "r_sf_tc8_pr", "r_sf_vi4_rn", "r_sf_tc12_re", "r_sf_em5_sc",
-    "r_sf_tc9_sd", "r_sf_vi2_tv", "r_sf_tc10_wl", "r_sf_vi3_av",
+    "r_sf_em1_ad",
+    "r_sf_em2_af",
+    "r_sf_tc1_al",
+    "r_sf_tc11_as",
+    "r_sf_em3_bo",
+    "r_sf_tc2_cm",
+    "r_sf_em6_cb",
+    "r_sf_em7_cp",
+    "r_sf_tc4_du",
+    "r_sf_tc3_ex",
+    "r_sf_tc5_el",
+    "r_sf_vi1_fv",
+    "r_sf_vi7_he",
+    "r_sf_em8_im",
+    "r_sf_vi5_ma",
+    "r_sf_em4_mi",
+    "r_sf_tc6_or",
+    "r_sf_tc7_pe",
+    "r_sf_vi6_po",
+    "r_sf_dm1_ps",
+    "r_sf_tc8_pr",
+    "r_sf_vi4_rn",
+    "r_sf_tc12_re",
+    "r_sf_em5_sc",
+    "r_sf_tc9_sd",
+    "r_sf_vi2_tv",
+    "r_sf_tc10_wl",
+    "r_sf_vi3_av",
     "r_sf_dm2_cs",
 ]
 
@@ -68,11 +98,7 @@ CATEGORICAL_FEATURES = [
 
 # Combine all modelling-safe features
 BASE_FEATURES = (
-    DRA_DIMENSIONS
-    + DRA_ITEMS
-    + RISK_COMPOSITES
-    + CREDIT_ASSESS_FEATURES
-    + CATEGORICAL_FEATURES
+    DRA_DIMENSIONS + DRA_ITEMS + RISK_COMPOSITES + CREDIT_ASSESS_FEATURES + CATEGORICAL_FEATURES
 )
 
 # =============================

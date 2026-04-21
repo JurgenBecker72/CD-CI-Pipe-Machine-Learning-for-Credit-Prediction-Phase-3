@@ -5,6 +5,7 @@ from sklearn.ensemble import RandomForestClassifier
 # Optional: XGBoost
 try:
     from xgboost import XGBClassifier
+
     xgb_available = True
 except ImportError:
     xgb_available = False
@@ -60,7 +61,7 @@ def compare_models(X_train, y_train, X_test, y_test):
             subsample=0.8,
             colsample_bytree=0.8,
             use_label_encoder=False,
-            eval_metric="logloss"
+            eval_metric="logloss",
         )
         xgb.fit(X_train, y_train)
         xgb_probs = xgb.predict_proba(X_test)[:, 1]

@@ -1,0 +1,31 @@
+# Normalize line endings across Windows, macOS, and Linux.
+# Text files are stored as LF in the repo; Git will convert on checkout
+# for Windows users only if they have core.autocrlf=true set locally.
+
+* text=auto eol=lf
+
+# Explicit text formats
+*.py       text eol=lf
+*.md       text eol=lf
+*.yml      text eol=lf
+*.yaml     text eol=lf
+*.txt      text eol=lf
+*.toml     text eol=lf
+*.cfg      text eol=lf
+*.ini      text eol=lf
+*.json     text eol=lf
+*.sh       text eol=lf
+.gitignore text eol=lf
+.gitattributes text eol=lf
+
+# Binary formats — never touch these
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.pdf   binary
+*.xlsx  binary
+*.xls   binary
+*.pkl   binary
+*.joblib binary
+*.parquet binary

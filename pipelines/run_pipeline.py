@@ -2,16 +2,15 @@
 # FINAL PIPELINE (SCORECARD + RF)
 # =========================================================
 
-import pandas as pd
 import numpy as np
-
-from sklearn.model_selection import train_test_split
+import pandas as pd
+from scipy.stats import ks_2samp
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import roc_auc_score
-from scipy.stats import ks_2samp
+from sklearn.model_selection import train_test_split
 
+from src.config import ID_COLUMNS, LEAKAGE_COLUMNS, RANDOM_STATE, TARGET
 from src.models.train_scorecard import train_scorecard_model
-from src.config import TARGET, ID_COLUMNS, LEAKAGE_COLUMNS, RANDOM_STATE
 
 
 # =========================================================
@@ -108,9 +107,7 @@ def run_pipeline(path):
     # ---------------------------------------------
     # SCORECARD
     # ---------------------------------------------
-    model, scores_df, summary = train_scorecard_model(
-        X_train, y_train, X_test, y_test
-    )
+    model, scores_df, summary = train_scorecard_model(X_train, y_train, X_test, y_test)
 
     # ---------------------------------------------
     # RF BENCHMARK
@@ -123,9 +120,7 @@ def run_pipeline(path):
     X_test_e = pd.get_dummies(X_test, drop_first=True)
     X_test_e = X_test_e.reindex(columns=X_train_e.columns, fill_value=0)
 
-    rf = RandomForestClassifier(
-        n_estimators=100, max_depth=5, random_state=RANDOM_STATE
-    )
+    rf = RandomForestClassifier(n_estimators=100, max_depth=5, random_state=RANDOM_STATE)
     rf.fit(X_train_e, y_train)
 
     probs_rf = rf.predict_proba(X_test_e)[:, 1]

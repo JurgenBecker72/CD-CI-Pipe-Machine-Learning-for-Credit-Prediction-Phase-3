@@ -58,24 +58,17 @@ def train_scorecard_model(X_train, y_train, X_test, y_test):
     # Score
     scores = build_score(probs)
 
-    df_scores = pd.DataFrame({
-        "pd": probs,
-        "score": scores,
-        "target": y_test.values
-    })
+    df_scores = pd.DataFrame({"pd": probs, "score": scores, "target": y_test.values})
 
     df_scores["band"] = pd.qcut(
-        df_scores["score"],
-        5,
-        labels=["E", "D", "C", "B", "A"],
-        duplicates="drop"
+        df_scores["score"], 5, labels=["E", "D", "C", "B", "A"], duplicates="drop"
     )
 
     summary = df_scores.groupby("band", observed=False).agg(
         count=("target", "count"),
         avg_score=("score", "mean"),
         avg_pd=("pd", "mean"),
-        bad_rate=("target", "mean")
+        bad_rate=("target", "mean"),
     )
 
     print("\n===== SCORE BAND SUMMARY =====")

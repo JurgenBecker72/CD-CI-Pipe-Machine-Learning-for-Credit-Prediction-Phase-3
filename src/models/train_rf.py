@@ -12,11 +12,7 @@ def train_random_forest(X_train, y_train):
     print("\n===== TRAINING RANDOM FOREST =====")
 
     # Train model
-    model = RandomForestClassifier(
-        n_estimators=100,
-        max_depth=5,
-        random_state=42
-    )
+    model = RandomForestClassifier(n_estimators=100, max_depth=5, random_state=42)
 
     model.fit(X_train, y_train)
 

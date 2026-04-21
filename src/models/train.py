@@ -21,7 +21,7 @@ class CreditModel(nn.Module):
             nn.ReLU(),
             nn.Linear(32, 16),
             nn.ReLU(),
-            nn.Linear(16, 1)
+            nn.Linear(16, 1),
         )
 
     def forward(self, x):
@@ -36,8 +36,8 @@ def train_model(X_train, y_train, X_val, y_val, epochs=10, lr=0.001):
     # -------------------------------
     # 🔥 FIX: Force all data to numeric
     # -------------------------------
-    X_train = X_train.apply(pd.to_numeric, errors='coerce')
-    X_val = X_val.apply(pd.to_numeric, errors='coerce')
+    X_train = X_train.apply(pd.to_numeric, errors="coerce")
+    X_val = X_val.apply(pd.to_numeric, errors="coerce")
 
     # Fill NaNs created by coercion
     X_train = X_train.fillna(0)
@@ -46,11 +46,11 @@ def train_model(X_train, y_train, X_val, y_val, epochs=10, lr=0.001):
     # -------------------------------
     # Convert to PyTorch tensors
     # -------------------------------
-    X_train = torch.tensor(X_train.values.astype('float32'))
-    y_train = torch.tensor(y_train.values.astype('float32')).view(-1, 1)
+    X_train = torch.tensor(X_train.values.astype("float32"))
+    y_train = torch.tensor(y_train.values.astype("float32")).view(-1, 1)
 
-    X_val = torch.tensor(X_val.values.astype('float32'))
-    y_val = torch.tensor(y_val.values.astype('float32')).view(-1, 1)
+    X_val = torch.tensor(X_val.values.astype("float32"))
+    y_val = torch.tensor(y_val.values.astype("float32")).view(-1, 1)
 
     # -------------------------------
     # Initialize model
