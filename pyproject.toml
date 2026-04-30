@@ -1,13 +1,88 @@
+[project]
+name = "credit-pipeline"
+version = "0.3.0"
+description = "Credit risk ML pipeline (Phase 3): scorecard + RF + governance"
+authors = [{ name = "Jurgen Bouwer", email = "jurgenb@axconsultgroup.com" }]
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+license = { text = "Proprietary" }
+
+# ---------------------------------------------------------------------------
+# Runtime dependencies — what the active pipeline actually imports.
+# Optional extras (xgboost, mlflow, fastapi, duckdb, pyspark) live below and
+# are pulled in by the phase that introduces them.
+# ---------------------------------------------------------------------------
+dependencies = [
+    "pandas>=2.2,<3.0",
+    "numpy>=1.26,<3.0",
+    "scikit-learn>=1.5,<2.0",
+    "scipy>=1.11,<2.0",
+    "openpyxl>=3.1,<4.0",
+    "joblib>=1.3,<2.0",
+    "matplotlib>=3.8,<4.0",
+    "seaborn>=0.13,<1.0",
+    "pydantic>=2.6,<3.0",
+    "pydantic-settings>=2.2,<3.0",
+]
+
+# Optional dependency groups for later phases. Install with e.g.
+#   uv sync --extra warehouse
+#   uv sync --all-extras
+[project.optional-dependencies]
+warehouse = [
+    "duckdb>=1.0,<2.0",
+    "great-expectations>=0.18,<1.0",
+]
+mlflow = [
+    "mlflow>=2.16,<3.0",
+    "shap>=0.45,<1.0",
+]
+serving = [
+    "fastapi>=0.115,<1.0",
+    "uvicorn[standard]>=0.30,<1.0",
+    "prometheus-client>=0.20,<1.0",
+]
+spark = [
+    "pyspark>=3.5,<4.0",
+]
+gbm = [
+    "xgboost>=2.1,<3.0",
+    "lightgbm>=4.5,<5.0",
+]
+
+# Development dependency groups (PEP 735). Excluded from production images
+# via `uv sync --no-dev` in the Dockerfile.
+[dependency-groups]
+lint = [
+    "ruff>=0.6,<1.0",
+    "black>=24.10,<26.0",
+]
+test = [
+    "pytest>=8.0,<9.0",
+    "pytest-cov>=5.0,<7.0",
+]
+dev = [
+    { include-group = "lint" },
+    { include-group = "test" },
+    "pre-commit>=3.7,<5.0",
+    "ipython>=8.20,<10.0",
+]
+
+[tool.uv]
+# Don't try to package this project; we run it in-place from /app.
+package = false
+
 [tool.black]
 line-length = 100
-target-version = ["py310", "py311", "py312"]
-# Keep black scoped to real source, skip archives and generated data
+target-version = ["py311"]
 extend-exclude = '''
 /(
     archive
   | data
   | models
   | reports
+  | warehouse
+  | mlflow-data
   | \.venv
   | __pycache__
 )/
@@ -15,23 +90,28 @@ extend-exclude = '''
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
-extend-exclude = ["archive", "data", "models", "reports", ".venv"]
+target-version = "py311"
+extend-exclude = ["archive", "data", "models", "reports", "warehouse", "mlflow-data", ".venv"]
 
 [tool.ruff.lint]
-# Start conservative: pyflakes + pycodestyle + isort + common bug-finders.
-# Widen later once the baseline is clean.
-select = ["E", "F", "W", "I", "B", "UP"]
+select = ["E", "F", "W", "I", "B", "UP", "N"]
 ignore = [
-    "E501",  # line-length handled by black
-    "B008",  # function call in argument default — common with typer/FastAPI-style APIs
+    "E501",
+    "B008",
+    "N803",
+    "N806",
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"__init__.py" = ["F401"]  # re-exports
+"__init__.py" = ["F401"]
+"tests/**" = ["S101"]
 
 [tool.pytest.ini_options]
-minversion = "7.0"
-addopts = "-q --disable-warnings"
+minversion = "8.0"
+addopts = "-q --disable-warnings --strict-markers"
 testpaths = ["tests", "pipelines"]
 python_files = ["test_*.py", "*_test.py"]
+markers = [
+    "integration: marks tests that exercise the full pipeline end-to-end (deselect with '-m \"not integration\"')",
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]

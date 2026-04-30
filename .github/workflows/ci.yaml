@@ -1,0 +1,57 @@
+name: CI
+
+# Triggered on every PR (any target branch) and on pushes to main / develop.
+# Keep this workflow narrow — lint + tests. Build / publish belong in a
+# separate workflow gated on push to main (added in a later phase).
+"on":
+  pull_request:
+  push:
+    branches: [main, develop]
+
+# Cancel a previous run when a new commit arrives on the same ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.11"
+  UV_VERSION: "0.4.27"
+
+jobs:
+  lint-and-test:
+    name: Lint + Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11"]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Sync dependencies (runtime + dev)
+        run: uv sync --frozen --group dev
+
+      - name: Ruff (lint)
+        run: uv run ruff check .
+
+      - name: Black (format check)
+        run: uv run black --check .
+
+      - name: Pytest (excluding integration tests)
+        run: uv run pytest -q -m "not integration"

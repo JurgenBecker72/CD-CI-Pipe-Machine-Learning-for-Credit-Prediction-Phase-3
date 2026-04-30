@@ -134,5 +134,36 @@ def run_pipeline(path):
 # =========================================================
 # RUN
 # =========================================================
+def main() -> None:
+    """CLI entry point.
+
+    Default data path comes from src.settings.settings.raw_dataset_path,
+    which resolves through src/paths.py + the RAW_DATASET_FILENAME env
+    var. Override with --data-path for ad-hoc runs:
+
+        python -m pipelines.run_pipeline
+        python -m pipelines.run_pipeline --data-path /app/data/raw/other.xlsx
+
+    Inside the training container, default resolves to
+    /app/data/raw/DRA_with_simulated_credit.xlsx, assuming the host
+    data/ folder is mounted at /app/data.
+    """
+    import argparse
+
+    from src.settings import settings
+
+    parser = argparse.ArgumentParser(
+        description="Run the credit scorecard + RF training pipeline.",
+    )
+    parser.add_argument(
+        "--data-path",
+        type=str,
+        default=str(settings.raw_dataset_path),
+        help="Path to the raw input dataset (default: %(default)s).",
+    )
+    args = parser.parse_args()
+    run_pipeline(args.data_path)
+
+
 if __name__ == "__main__":
-    run_pipeline("data/raw/DRA_with_simulated_credit.xlsx")
+    main()

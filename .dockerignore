@@ -1,0 +1,51 @@
+# Anything listed here is excluded from the Docker build context, keeping
+# image builds fast and the image small.
+
+# --- VCS / IDE ---
+.git
+.github
+.idea
+.vscode
+.gitattributes
+
+# --- Python build artefacts ---
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.egg-info
+.pytest_cache
+.ruff_cache
+.mypy_cache
+
+# --- Local environment ---
+.env
+.env.*
+!.env.example
+
+# --- Data and model artefacts ---
+# Mount these at runtime, never bake them into images.
+data/
+models/
+reports/
+warehouse/
+mlflow-data/
+
+# --- Archive / legacy code ---
+archive/
+
+# --- Local docs and previews ---
+*.docx
+*.pdf
+preview-*.jpg
+content_preview-*.jpg
+Infographic.png
+docs/
+
+# --- Things only relevant outside the image ---
+docker/
+.pre-commit-config.yaml
+.dockerignore
+.gitignore
+WJARR-*.pdf

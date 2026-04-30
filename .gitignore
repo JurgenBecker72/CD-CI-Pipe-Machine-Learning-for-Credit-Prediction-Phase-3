@@ -18,6 +18,19 @@ venv/
 env/
 ENV/
 
+# ---------- uv ----------
+# uv.lock IS committed (reproducibility) — do not ignore it.
+# These are uv's caches/scratch files and should not be tracked.
+.uv-cache/
+uv-receipt.json
+
+# ---------- Phase A: production scaffolding scratch ----------
+# Local services data (Phase B-onwards):
+warehouse/
+mlflow-data/
+# Local-only Docker compose state:
+.docker-compose-state/
+
 # ---------- IDE / OS ----------
 .vscode/
 .idea/

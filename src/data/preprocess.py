@@ -94,9 +94,7 @@ def create_features(df):
         df["affordability_ratio"] = df["income"] / (df["expenses"] + 1)
 
     if "total_risk_score" in df.columns and "dim_emotional_understanding" in df.columns:
-        df["risk_x_emotional"] = (
-            df["total_risk_score"] * df["dim_emotional_understanding"]
-        )
+        df["risk_x_emotional"] = df["total_risk_score"] * df["dim_emotional_understanding"]
 
     if "risk_drivers" in df.columns and "risk_mitigators" in df.columns:
         df["risk_ratio"] = df["risk_drivers"] / (df["risk_mitigators"] + 1)
@@ -220,13 +218,9 @@ def scale_features(X_train, X_val, X_test):
     X_val_scaled = scaler.transform(X_val)
     X_test_scaled = scaler.transform(X_test)
 
-    X_train_scaled = pd.DataFrame(
-        X_train_scaled, columns=X_train.columns, index=X_train.index
-    )
+    X_train_scaled = pd.DataFrame(X_train_scaled, columns=X_train.columns, index=X_train.index)
     X_val_scaled = pd.DataFrame(X_val_scaled, columns=X_val.columns, index=X_val.index)
-    X_test_scaled = pd.DataFrame(
-        X_test_scaled, columns=X_test.columns, index=X_test.index
-    )
+    X_test_scaled = pd.DataFrame(X_test_scaled, columns=X_test.columns, index=X_test.index)
 
     joblib.dump(scaler, "models/scaler.pkl")
 

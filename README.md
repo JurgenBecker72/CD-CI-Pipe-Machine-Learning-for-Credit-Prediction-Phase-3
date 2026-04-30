@@ -1,11 +1,11 @@
 # Machine Learning for Credit Prediction — Phase 3
 
-![Infographic: Design Overview](Infographic.png)
+![Infographic: Design Overview](docs/images/Infographic.png)
 ---
 
 In the first phase of this project, we demonstrated the value of psychometric data as an alternative input for credit scoring, particularly in thin-file and emerging markets where traditional financial histories are limited or absent. Using the same 13 higher-order DRA factors, we evaluated five different modelling approaches to determine which most effectively ranks credit risk. Our findings showed that while traditional logistic regression provides a stable and highly interpretable baseline, ensemble methods such as XGBoost deliver superior predictive performance by capturing complex non-linear relationships in behavioural data.
 
-Building on these insights, the second phase extended the work by exploring additional Machine Learning techniques, including a hybrid modelling approach. Here, XGBoost predictions were passed through a logistic calibration layer to produce well-calibrated probabilities of default (PD). These probabilities were then transformed into an interpretable scorecard format with risk bands (A–F). This phase highlighted how to effectively balance the strong predictive power of advanced ML models with the operational and regulatory advantages of traditional scorecards delivering both accuracy and explainability in a format that lenders can easily adopt. 
+Building on these insights, the second phase extended the work by exploring additional Machine Learning techniques, including a hybrid modelling approach. Here, XGBoost predictions were passed through a logistic calibration layer to produce well-calibrated probabilities of default (PD). These probabilities were then transformed into an interpretable scorecard format with risk bands (A–F). This phase highlighted how to effectively balance the strong predictive power of advanced ML models with the operational and regulatory advantages of traditional scorecards delivering both accuracy and explainability in a format that lenders can easily adopt.
 
 In the third phase, we focus on building a complete end-to-end alternative credit scoring pipeline. This production-oriented system integrates **psychometric (DRA) assessments** with **traditional credit bureau features** to predict loan default probability, calibrate these predictions to a scorecard, and assign A–E risk bands. The project is engineered for a smooth transition from local development to a CI/CD-driven analytics product. It provides a clean, reproducible, and leakage-proof path from raw psychometric and credit-bureau data all the way to scored customers. The ultimate goal is a fully tested, reproducible source environment that can be promoted to production with confidence. Various ML techniques, including XGBoost and Random Forests, are used to define and compile features. These final engineered features are included in the logistic regression model, which is calibrated on actual bad rates to estimate the Probability of Default. Finally, SHAP analysis is conducted for traceback and compliance.
 
@@ -13,7 +13,7 @@ In the third phase, we focus on building a complete end-to-end alternative credi
 
 ## Dataset
 
-This analysis uses real psychometric assessment data. All financial data is simulated to match realistic distributions and patterns from the original dataset (based on a South African thin-file population) containing about 44 998 unique cases to protect any personal data. 
+This analysis uses real psychometric assessment data. All financial data is simulated to match realistic distributions and patterns from the original dataset (based on a South African thin-file population) containing about 44 998 unique cases to protect any personal data.
 
 | Property | Value |
 |---|---|
@@ -31,7 +31,7 @@ The feature space spans four DRA dimension scores, 41 psychometric item-level sc
 
 ![Pipeline: Runtime Architecture](docs/images/pipeline_architecture.png)
 
-**The Critical Design Rule - Preventing Data Leakage** 
+**The Critical Design Rule - Preventing Data Leakage**
 
 A core principle of this pipeline is the strict prevention of data leakage. Every step that learns from the data — such as calculating imputation medians, scaler statistics, model coefficients, or calibration mappings — is performed **only after** the train/validation/test split and is fitted exclusively on the training set.
 
@@ -45,32 +45,115 @@ Getting the pipeline up and running is straightforward and designed for reproduc
 
 ### 1. Clone the repository and set up the environment
 
+The project uses [uv](https://docs.astral.sh/uv/) for dependency management and a pinned `pyproject.toml` as the source of truth. uv is faster than pip+venv and produces a `uv.lock` that captures the exact version of every transitive dependency, so installs are reproducible across machines.
+
+**Install uv** (one-time, once per machine):
+
+```bash
+# macOS / Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Windows (PowerShell)
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+**Clone, sync, and install hooks**:
+
 ```bash
 git clone https://github.com/<you>/Machine-Learning-For-Credit-Prediction-Phase-3.git
 cd Machine-Learning-For-Credit-Prediction-Phase-3
 
-python -m venv .venv
-source .venv/bin/activate   # On Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+# Pulls Python 3.11 if needed, creates .venv, installs runtime + dev deps
+uv sync --group dev
+
+# Install pre-commit hooks (runs ruff + black + hygiene checks on git commit)
+uv run pre-commit install
+
+# Copy the example env file and edit if needed (defaults are sensible for local dev)
+cp .env.example .env
 ```
+
+From here, run any project command via `uv run …` and uv handles activation:
+
+```bash
+uv run pytest                      # full test suite
+uv run pytest -m "not integration" # fast tests only
+uv run ruff check .                # lint
+uv run black --check .             # formatter check
+uv run python -m pipelines.run_pipeline  # the pipeline
+```
+
+> **Optional dependency groups** — extras are pulled in by phase, not all at once:
+> `uv sync --extra warehouse` for DuckDB + Great Expectations (Phase B),
+> `uv sync --extra mlflow` for MLflow + SHAP (Phase C),
+> `uv sync --extra serving` for FastAPI + Prometheus client (Phase E),
+> `uv sync --all-extras` to pull everything for full local-stack work.
+
+> **Note** — `pyproject.toml` is the single source of truth for dependencies. The legacy `requirements.txt` was removed in the Phase A cleanup; install everything through `uv sync`.
+
+### 1b. Running inside Docker (Phase B)
+
+Phase B introduces a containerised version of the training pipeline. The same code, the same dependencies, the same outputs — but running inside a sealed Docker image rather than against your laptop's local Python. This is the format every cloud platform (AWS, GCP, Azure, Databricks) eventually expects.
+
+Three PowerShell shortcuts in `scripts/` wrap the docker commands so you don't type long flag lists every time.
+
+**One-time: build the image** (~2–5 minutes the first time, ~30 seconds for rebuilds thanks to layer caching):
+
+```powershell
+.\scripts\docker-build.ps1
+```
+
+**Smoke test the image** — runs a tiny "image is healthy" check and exits:
+
+```powershell
+.\scripts\docker-smoke.ps1
+```
+
+Expected output:
+```
+credit-pipeline image OK — Python 3.11, sklearn x.x, pandas x.x
+```
+
+**Run the full training pipeline inside the container**, with your `data/`, `models/`, and `reports/` mounted in:
+
+```powershell
+.\scripts\docker-run.ps1
+```
+
+You should see the same scorecard + RF training metrics print to your terminal that you'd see running bare metal. Outputs (trained scaler, metrics, model artefacts) end up on your host filesystem inside `models/` and `reports/` — not inside the container.
+
+**Behind the scenes, those scripts are just docker commands.** If you want to see the equivalent raw command:
+
+```powershell
+docker build -t credit-pipeline:dev -f docker/training.Dockerfile .
+docker run --rm credit-pipeline:dev
+docker run --rm `
+  -v ${PWD}/data:/app/data `
+  -v ${PWD}/models:/app/models `
+  -v ${PWD}/reports:/app/reports `
+  credit-pipeline:dev `
+  -m pipelines.run_pipeline
+```
+
+The PowerShell scripts exist purely to save typing — they're documented and you can read them in `scripts/` to see what they do.
 
 ### 2. Add the raw data
 
-Place the file `DRA_with_simulated_credit.xlsx` into the `data/raw/` folder. 
+Place the file `DRA_with_simulated_credit.xlsx` into the `data/raw/` folder.
 
-This file is deliberately not committed to the repository to protect privacy. Without it, the pipeline cannot run. 
+This file is deliberately not committed to the repository to protect privacy. Without it, the pipeline cannot run.
 
 ### 3. Run the pipeline
 
-You have two main options: 
+You have two main options:
 
 **Preprocessing only** (useful for inspecting cleaned data and splits):
 
 ```bash
-# (a) Preprocess only 
+# (a) Preprocess only
 python -m src.data.preprocess
 ```
-This generates processed datasets in data/processed/ and saves the fitted scaler in models/scaler.pkl. 
+This generates processed datasets in data/processed/ and saves the fitted scaler in models/scaler.pkl.
 
 **Full end-to-end pipeline** (recommended):
 
@@ -112,9 +195,9 @@ Single-feature AUCs printed by the leakage diagnostic should all fall in roughly
 
 The pipeline follows a structured, leakage-proof workflow specifically designed for credit risk applications where interpretability and regulatory acceptance are as important as predictive power.
 
-**1. Data Ingestion and Preprocessing** 
+**1. Data Ingestion and Preprocessing**
 
-Raw psychometric (DRA) and credit bureau data are loaded from `DRA_with_simulated_credit.xlsx`. Performance-window variables are explicitly removed to eliminate target leakage. 
+Raw psychometric (DRA) and credit bureau data are loaded from `DRA_with_simulated_credit.xlsx`. Performance-window variables are explicitly removed to eliminate target leakage.
 
 **2. Feature Engineering**
 
@@ -138,10 +221,17 @@ Predicted probabilities are calibrated to true default rates. The calibrated sco
 Machine-Learning-For-Credit-Prediction-Phase-3/
 ├── .github/
 │   └── workflows/
-│       └── ci.yml                 # Lint, test, and smoke-run on every push
+│       └── ci.yaml                # Lint + test on every PR (Phase A)
+├── docker/
+│   └── training.Dockerfile        # Multi-stage image (uv builder → slim runtime, Phase A)
+├── scripts/
+│   ├── docker-build.ps1           # Build the training image (Phase B)
+│   ├── docker-smoke.ps1           # Smoke-test the built image (Phase B)
+│   └── docker-run.ps1             # Run the full pipeline inside a container (Phase B)
 ├── src/
-│   ├── config.py                  # Single source of truth — target, IDs, leakage, feature groups
+│   ├── config.py                  # Static project knowledge — target, IDs, leakage, feature groups
 │   ├── paths.py                   # Anchored path resolution
+│   ├── settings.py                # Environment-aware runtime settings (Phase A, pydantic-settings)
 │   ├── data/
 │   │   ├── ingest.py              # Raw Excel → DataFrame
 │   │   ├── preprocess.py          # Clean → drop IDs → drop leakage → split → impute → scale
@@ -154,9 +244,11 @@ Machine-Learning-For-Credit-Prediction-Phase-3/
 │       ├── evaluate.py            # AUC / Gini / KS
 │       └── compare_models.py      # Side-by-side model comparison
 ├── pipelines/
-│   ├── run_pipeline.py            # End-to-end orchestrator
-│   └── test_ingest.py             # Smoke test for the ingest layer
-├── tests/                         # Unit tests (to be populated)
+│   └── run_pipeline.py            # End-to-end orchestrator
+├── tests/
+│   ├── test_config.py             # Locks in TARGET / IDs / leakage invariants
+│   ├── test_settings.py           # Smoke tests for src/settings.py (Phase A)
+│   └── test_pipeline_smoke.py     # Smoke tests for the pipeline entry point (Phase B)
 ├── data/
 │   ├── raw/                       # .gitignored — raw Excel lives here
 │   └── processed/                 # .gitignored — generated CSVs
@@ -165,10 +257,47 @@ Machine-Learning-For-Credit-Prediction-Phase-3/
 ├── archive/
 │   ├── v1_initial/                # Earlier parallel build, kept for comparison
 │   └── v2_refactor/               # Earlier refactor, kept for diff / audit trail
+├── docs/
+│   ├── LEARNING_PLAN.md           # Original 5-phase pragmatic learning path
+│   ├── PRODUCTION_BUILD_PLAN.md   # Ambitious 8-phase production roadmap (canonical)
+│   ├── PRODUCTION_BUILD_PLAN.pdf  # Printable version of the roadmap
+│   ├── DIGEST.md                  # Second-eyes review log (April 2026)
+│   ├── architecture/
+│   │   └── Credit_Pipeline_Production_Architecture.docx  # Full design doc
+│   ├── images/                    # Infographic, pipeline diagrams
+│   └── references/                # Research papers
 ├── README.md
-├── requirements.txt
+├── pyproject.toml                 # Single source of truth for deps + tooling
+├── .pre-commit-config.yaml        # Local hygiene hooks (Phase A)
+├── .env.example                   # Documents settings.py env vars (Phase A)
+├── .dockerignore                  # Image build exclusions (Phase A)
 └── .gitignore
 ```
+
+---
+
+## Production scaffolding (Phase A)
+
+The repository was moved to a production-style scaffolding in Phase A. Three concepts live in three places, by design:
+
+| Module          | Responsibility                                         | Example                                    |
+| --------------- | ------------------------------------------------------ | ------------------------------------------ |
+| `src/config.py` | What the project *knows about its data*                | `TARGET`, `LEAKAGE_COLUMNS`, feature lists |
+| `src/paths.py`  | Where files *live on disk* (project-relative)          | `RAW_DIR`, `MODELS_DIR`, `REPORTS_DIR`     |
+| `src/settings.py` | Runtime values that *change between environments*    | `mlflow_tracking_uri`, `env`, `log_level`  |
+
+Use `from src.settings import settings` in any code that needs an environment-driven value. Static feature lists keep coming from `src/config.py`; filesystem layout from `src/paths.py`.
+
+**Container image** — `docker/training.Dockerfile` is a two-stage build: stage 1 uses uv to assemble a pinned virtual environment from `pyproject.toml` + `uv.lock`; stage 2 is a slim Python base with that venv copied in and a non-root user. Build and smoke-test with:
+
+```bash
+docker build -t credit-pipeline:dev -f docker/training.Dockerfile .
+docker run --rm credit-pipeline:dev
+```
+
+**Continuous integration** — `.github/workflows/ci.yaml` runs on every PR and on pushes to `main` / `develop`. It installs uv, syncs the locked dependency graph, then runs ruff, black, and pytest (excluding tests marked `integration`). Caches keyed on `uv.lock` so subsequent runs are fast.
+
+**Pre-commit hooks** — declared in `.pre-commit-config.yaml`, installed via `uv run pre-commit install`. Hooks run on `git commit`: ruff (with `--fix`), black, plus standard hygiene checks (trailing whitespace, EOF newline, large-file blocker, merge-conflict marker scan). Hook versions mirror those used by CI so local checks and CI checks agree.
 
 ---
 
@@ -209,18 +338,18 @@ This repository is structured so the path from a commit to a deployed model is m
 
 ![CI/CD: Production Roadmap](docs/images/cicd_roadmap.png)
 
-### Stage 1 — Continuous Integration (Implemented) 
+### Stage 1 — Continuous Integration (Implemented)
 
 Every push to `main` or `develop`, and every pull request, runs linting (Ruff), formatting checks (Black), unit tests (pytest), and a smoke-run. This configuration represents the foundation of a production-ready machine learning pipeline and ensures code quality, consistency, and reproducibility from day one.
 
-**1. Lint & Test:** 
+**1. Lint & Test:**
 - Linting with Ruff: Checks for common coding issues, unused imports, undefined variables, and potential bugs.
 - Formatting with Black: Enforces a consistent code style across all Python files in `src/` and `pipelines/`.
 - Unit Tests with pytest: Runs automated tests to verify that individual components (preprocessing, splitting, etc.) work as expected.
 
-The tests run on three different Python versions simultaneously. This gives confidence that the pipeline will behave consistently whether someone runs it on Python 3.10, 3.11, or 3.12. 
+The tests run on three different Python versions simultaneously. This gives confidence that the pipeline will behave consistently whether someone runs it on Python 3.10, 3.11, or 3.12.
 
-**2. Smoke Run (End-to-End Pipeline Test):** 
+**2. Smoke Run (End-to-End Pipeline Test):**
 
 After the linting and unit tests pass, a smoke test runs the entire pipeline from start to finish using a small generated dataset. This smoke test is extremely useful because it catches integration issues early. No merge to `main` is allowed without a green build.
 
@@ -240,32 +369,32 @@ Passing models are versioned with a git SHA, data hash, and full metrics. The sc
 
 A FastAPI container loads the registered model and exposes a `/score` endpoint. It returns PD, final score, and risk band. The container is built and pushed by CI on every tagged release.
 
-### Stage 6 — Shadow Traffic 
+### Stage 6 — Shadow Traffic
 
 New models run in parallel with the champion on live traffic. Predictions are logged for comparison, but customer decisions still use the current champion.
 
-### Stage 7 — Promotion 
+### Stage 7 — Promotion
 
 After the shadow period, a human review compares challenger vs champion metrics. Promotion simply updates a pointer in the model registry — no code changes or service restarts are required.
 
 ### Stage 8 — Monitoring
 
-Ongoing tracking of population stability, feature drift, realised bad rate vs predicted PD, and A–E band stability. Significant drift automatically triggers Stage 2 (retraining). 
+Ongoing tracking of population stability, feature drift, realised bad rate vs predicted PD, and A–E band stability. Significant drift automatically triggers Stage 2 (retraining).
 
-This is the skeleton that customers and regulators are buying: not just one good model, but a **repeatable, auditable system** that can train, validate, deploy, monitor and and retire models on a schedule — while maintaining the interpretability and compliance needs of credit risk scoring. 
+This is the skeleton that customers and regulators are buying: not just one good model, but a **repeatable, auditable system** that can train, validate, deploy, monitor and and retire models on a schedule — while maintaining the interpretability and compliance needs of credit risk scoring.
 
 By building strong foundations (leakage-proof pipeline + CI/CD), we make the journey to full production deployment straightforward and low-risk.
 
 ---
-## Conclusion 
+## Conclusion
 
-In this project, we deployed the ML-informed Logistic Regression — a hybrid development methodology that uses ML techniques during the feature engineering phase to discover which non-linear effects and feature interactions carry genuine predictive signal. Those discovered patterns were then encoded as explicit, fixed terms inside a production logistic regression, preserving full coefficient transparency and regulatory auditability. 
+In this project, we deployed the ML-informed Logistic Regression — a hybrid development methodology that uses ML techniques during the feature engineering phase to discover which non-linear effects and feature interactions carry genuine predictive signal. Those discovered patterns were then encoded as explicit, fixed terms inside a production logistic regression, preserving full coefficient transparency and regulatory auditability.
 
 In principle, this approach gives us the best of both worlds: The feature engineering intelligence of ML combined with the regulatory defensibility of a traditional scorecard. The resulting model is static (every predictor carries a fixed, interpretable coefficient) and thus capable of withstanding regulatory review or legal challenge — a requirement that purely dynamic ML models cannot satisfy in most regulated lending environments.
 
 In practice, however, the richness we mined from the ML layer was significantly eroded when we moved into the logistic regression decision layer due to collinearity (substantial overlapping variance) between psychometric variables. This means that when we introduced the ML-derived interaction terms and non-linear composites alongside the main effects, the model became unstable. The only path to a stable model was to strip the feature set back to main effects, removing most of the engineered variables the ML phase had identified as predictive. Consequently, the richer representation of borrower behaviour was effectively lost in the translation to a stable LR.
 
-To address the trade-off between feature richness and model stability, in the final phase of the project we use the same dataset and ML-derived feature universe. We then apply various statistical transformations (e.g., centering and standardisation, residualisation, and binning) to the feature set before it enters the logistic regression. The goal of the fourth phase of the project is to explore how psychometric signals can be transformed into a regulator-ready decision layer while simultaneously maintaining feature richness associated with ML techniques. 
+To address the trade-off between feature richness and model stability, in the final phase of the project we use the same dataset and ML-derived feature universe. We then apply various statistical transformations (e.g., centering and standardisation, residualisation, and binning) to the feature set before it enters the logistic regression. The goal of the fourth phase of the project is to explore how psychometric signals can be transformed into a regulator-ready decision layer while simultaneously maintaining feature richness associated with ML techniques.
 
 ---
 
@@ -275,7 +404,7 @@ To address the trade-off between feature richness and model stability, in the fi
 
 - `src/`, `pipelines/`, `tests/` — all source
 - `.github/workflows/` — CI configuration
-- `README.md`, `requirements.txt`, `.gitignore`
+- `README.md`, `pyproject.toml`, `.gitignore`
 - `archive/` — historical builds kept for the audit trail
 
 **Never in the repo (enforced by `.gitignore`):**
@@ -289,11 +418,11 @@ To address the trade-off between feature richness and model stability, in the fi
 Raw data and model binaries in git are the single fastest way to make a repository unclonable and a team unhappy.
 
 ---
-## References 
+## References
 
-Keating, L. (2021). Automated Feature Engineering in Ensemble Credit Scoring Pipelines. 
+Keating, L. (2021). Automated Feature Engineering in Ensemble Credit Scoring Pipelines.
 
-Roland, A. (2025). Machine learning for credit scoring and loan default prediction using behavioral and transactional financial data. World Journal of Advanced Research and Reviews, 26(3), 884-904. https://doi.org/10.30574/wjarr.2025.26.3.2266 
+Roland, A. (2025). Machine learning for credit scoring and loan default prediction using behavioral and transactional financial data. World Journal of Advanced Research and Reviews, 26(3), 884-904. https://doi.org/10.30574/wjarr.2025.26.3.2266
 
 ## License
 
