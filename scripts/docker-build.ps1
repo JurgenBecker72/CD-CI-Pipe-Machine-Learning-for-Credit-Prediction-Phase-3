@@ -7,7 +7,7 @@
 #     .\scripts\docker-build.ps1 -Tag v0.4.0
 #     .\scripts\docker-build.ps1 -NoCache
 #
-# Tag defaults to "dev" — overridable for release builds. -NoCache forces
+# Tag defaults to "dev" - overridable for release builds. -NoCache forces
 # a full rebuild ignoring layer cache (useful when debugging the
 # Dockerfile itself).
 # -----------------------------------------------------------

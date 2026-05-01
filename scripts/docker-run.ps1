@@ -32,7 +32,7 @@ Set-Location $ProjectRoot
 $ImageName = "credit-pipeline:$Tag"
 
 # Make sure target host folders exist (Docker would create them itself,
-# but with weird perms — better to create them here, owned by you).
+# but with weird perms - better to create them here, owned by you).
 foreach ($d in @("data", "data/raw", "data/processed", "models", "reports")) {
     if (-not (Test-Path $d)) {
         New-Item -ItemType Directory -Force -Path $d | Out-Null
@@ -62,4 +62,4 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
-Write-Host "Run complete — see metrics in reports/, models in models/" -ForegroundColor Green
+Write-Host "Run complete - see metrics in reports/, models in models/" -ForegroundColor Green

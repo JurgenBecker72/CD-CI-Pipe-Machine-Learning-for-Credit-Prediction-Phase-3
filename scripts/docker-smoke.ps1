@@ -26,8 +26,8 @@ Write-Host "Smoke-testing $ImageName ..." -ForegroundColor Cyan
 docker run --rm $ImageName
 
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "Smoke test FAILED (exit $LASTEXITCODE) — image is broken" -ForegroundColor Red
+    Write-Host "Smoke test FAILED (exit $LASTEXITCODE) - image is broken" -ForegroundColor Red
     exit $LASTEXITCODE
 }
 
-Write-Host "Smoke OK — image is healthy and ready to run the pipeline" -ForegroundColor Green
+Write-Host "Smoke OK - image is healthy and ready to run the pipeline" -ForegroundColor Green

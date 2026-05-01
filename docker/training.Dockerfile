@@ -19,10 +19,17 @@
 ARG PYTHON_VERSION=3.11
 ARG UV_VERSION=0.4.27
 
+# ---------- Stage 0: pull uv binary from Astral's official image -------------
+# This is the canonical pattern (Astral docs). Avoids running install scripts
+# and the PATH issues they bring inside Docker. The uv image is tiny (~30 MB)
+# and pinned to a specific version for reproducibility.
+FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv
+
 # ---------- Stage 1: builder --------------------------------------------------
 FROM python:${PYTHON_VERSION}-slim-bookworm AS builder
 
-ARG UV_VERSION
+# Copy the uv binary from the uv stage into a path already on PATH.
+COPY --from=uv /uv /uvx /usr/local/bin/
 
 ENV UV_LINK_MODE=copy \
     UV_COMPILE_BYTECODE=1 \
@@ -30,17 +37,6 @@ ENV UV_LINK_MODE=copy \
     UV_PYTHON_DOWNLOADS=never \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1
-
-# Install build essentials only when wheels aren't available for a dep.
-# Kept minimal; expand only if a sync fails for a missing toolchain.
-RUN apt-get update \
- && apt-get install -y --no-install-recommends curl ca-certificates \
- && rm -rf /var/lib/apt/lists/*
-
-# Install uv at a pinned version, not "latest", for reproducibility.
-ADD https://astral.sh/uv/${UV_VERSION}/install.sh /tmp/uv-installer.sh
-RUN sh /tmp/uv-installer.sh && rm /tmp/uv-installer.sh
-ENV PATH="/root/.local/bin:${PATH}"
 
 WORKDIR /app
 
