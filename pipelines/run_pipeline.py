@@ -16,10 +16,34 @@ from src.models.train_scorecard import train_scorecard_model
 # =========================================================
 # LOAD DATA
 # =========================================================
-def load_data(path):
+def load_data(path=None):
+    """Load training data.
+
+    Phase C onwards: by default the pipeline reads from the DuckDB warehouse
+    (marts.applicant_features). The warehouse is refreshed from the source
+    Excel on every call, gated by the Great Expectations data contract.
+
+    Pass a `path` (or use --data-path on the CLI) to bypass the warehouse
+    and load directly from an Excel file. Useful for ad-hoc testing on a
+    different dataset without touching the warehouse state.
+    """
+    if path is None:
+        # Default: warehouse-backed read.
+        from src.data.warehouse import read_marts, refresh
+
+        row_counts = refresh()
+        print(
+            f"\nWarehouse refreshed: raw={row_counts['raw']:,} -> "
+            f"staging={row_counts['staging']:,} -> marts={row_counts['marts']:,}"
+        )
+        df = read_marts()
+        print(f"Loaded data from marts.applicant_features: {df.shape}")
+        return df
+
+    # Override: load directly from a file.
     df = pd.read_excel(path)
     df.columns = df.columns.str.strip().str.lower().str.replace(" ", "_")
-    print(f"\nLoaded data: {df.shape}")
+    print(f"\nLoaded data from file ({path}): {df.shape}")
     return df
 
 
@@ -80,8 +104,12 @@ def evaluate(y_true, probs):
 # =========================================================
 # MAIN PIPELINE
 # =========================================================
-def run_pipeline(path):
+def run_pipeline(path=None):
+    """End-to-end training pipeline.
 
+    Without arguments, reads from the DuckDB warehouse (Phase C default).
+    Pass a path to override and read directly from an Excel file.
+    """
     print("\n===== START PIPELINE =====")
 
     # ---------------------------------------------
@@ -137,20 +165,18 @@ def run_pipeline(path):
 def main() -> None:
     """CLI entry point.
 
-    Default data path comes from src.settings.settings.raw_dataset_path,
-    which resolves through src/paths.py + the RAW_DATASET_FILENAME env
-    var. Override with --data-path for ad-hoc runs:
+    Default behaviour (Phase C onwards): refresh the DuckDB warehouse from
+    the source dataset, then read marts.applicant_features. The Great
+    Expectations contract runs at the raw -> staging boundary; a failed
+    contract aborts the run with a clear error.
 
-        python -m pipelines.run_pipeline
-        python -m pipelines.run_pipeline --data-path /app/data/raw/other.xlsx
+        python -m pipelines.run_pipeline                                # warehouse-backed
+        python -m pipelines.run_pipeline --data-path /path/other.xlsx   # bypass warehouse
 
-    Inside the training container, default resolves to
-    /app/data/raw/DRA_with_simulated_credit.xlsx, assuming the host
-    data/ folder is mounted at /app/data.
+    The override is useful for ad-hoc testing on a different sample
+    without polluting warehouse state.
     """
     import argparse
-
-    from src.settings import settings
 
     parser = argparse.ArgumentParser(
         description="Run the credit scorecard + RF training pipeline.",
@@ -158,8 +184,9 @@ def main() -> None:
     parser.add_argument(
         "--data-path",
         type=str,
-        default=str(settings.raw_dataset_path),
-        help="Path to the raw input dataset (default: %(default)s).",
+        default=None,
+        help="Optional Excel path that bypasses the warehouse "
+        "(default: read from DuckDB marts.applicant_features).",
     )
     args = parser.parse_args()
     run_pipeline(args.data_path)

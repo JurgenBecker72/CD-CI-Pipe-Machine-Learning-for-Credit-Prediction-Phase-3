@@ -31,7 +31,7 @@ dependencies = [
 [project.optional-dependencies]
 warehouse = [
     "duckdb>=1.0,<2.0",
-    "great-expectations>=0.18,<1.0",
+    "great-expectations>=1.0,<2.0",
 ]
 mlflow = [
     "mlflow>=2.16,<3.0",

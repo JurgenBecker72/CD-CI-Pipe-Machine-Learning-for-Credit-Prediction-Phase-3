@@ -91,6 +91,47 @@ uv run python -m pipelines.run_pipeline  # the pipeline
 
 > **Note** — `pyproject.toml` is the single source of truth for dependencies. The legacy `requirements.txt` was removed in the Phase A cleanup; install everything through `uv sync`.
 
+### 1c. Reading from a SQL warehouse (Phase C)
+
+Phase C introduces a DuckDB-backed warehouse so the pipeline reads SQL instead of an Excel file. The warehouse is a single file at `warehouse/credit.duckdb` (gitignored) with three logical schemas:
+
+| Schema | Contents |
+|---|---|
+| `raw` | The source Excel loaded as-is. Never modified after ingest. |
+| `staging` | Typed, deduplicated. Promoted from raw only after the data contract passes. |
+| `marts` | A view over staging that drops ID + leakage columns. Model-ready. |
+
+**Install the warehouse extras (one-time):**
+
+```powershell
+uv sync --extra warehouse
+```
+
+This pulls in `duckdb` and `great-expectations`.
+
+**Refresh the warehouse from the source Excel:**
+
+```powershell
+uv run python -c "from src.data.warehouse import refresh; print(refresh())"
+```
+
+You should see `{'raw': 44998, 'staging': 44998, 'marts': 44998}` (counts will match your data).
+
+**Inspect the warehouse interactively:**
+
+```powershell
+uv run python -c "from src.data.warehouse import read_sql; print(read_sql('SELECT COUNT(*) FROM marts.applicant_features'))"
+```
+
+**The data contract.** A Great Expectations suite at `src/data/contracts/application.py` runs at the raw → staging promotion. Five expectations: row count band, primary-key uniqueness, target distribution, leakage-column absence, DRA range bounds. A failure aborts the pipeline with a clear message — no silent corruption.
+
+**The pipeline now reads from the warehouse by default:**
+
+```powershell
+uv run python -m pipelines.run_pipeline               # warehouse-backed (default)
+uv run python -m pipelines.run_pipeline --data-path data/raw/other.xlsx   # bypass for ad-hoc
+```
+
 ### 1b. Running inside Docker (Phase B)
 
 Phase B introduces a containerised version of the training pipeline. The same code, the same dependencies, the same outputs — but running inside a sealed Docker image rather than against your laptop's local Python. This is the format every cloud platform (AWS, GCP, Azure, Databricks) eventually expects.
@@ -235,7 +276,10 @@ Machine-Learning-For-Credit-Prediction-Phase-3/
 │   ├── data/
 │   │   ├── ingest.py              # Raw Excel → DataFrame
 │   │   ├── preprocess.py          # Clean → drop IDs → drop leakage → split → impute → scale
-│   │   └── split.py               # Stratified 70/10/20 split
+│   │   ├── split.py               # Stratified 70/10/20 split
+│   │   ├── warehouse.py           # DuckDB warehouse: raw/staging/marts (Phase C)
+│   │   └── contracts/
+│   │       └── application.py     # Great Expectations data contract (Phase C)
 │   ├── features/
 │   │   └── features.py            # Row-wise engineered features
 │   └── models/
@@ -248,7 +292,9 @@ Machine-Learning-For-Credit-Prediction-Phase-3/
 ├── tests/
 │   ├── test_config.py             # Locks in TARGET / IDs / leakage invariants
 │   ├── test_settings.py           # Smoke tests for src/settings.py (Phase A)
-│   └── test_pipeline_smoke.py     # Smoke tests for the pipeline entry point (Phase B)
+│   ├── test_pipeline_smoke.py     # Smoke tests for the pipeline entry point (Phase B)
+│   └── test_warehouse.py          # Smoke tests for src/data/warehouse.py (Phase C)
+├── warehouse/                     # .gitignored — credit.duckdb lives here (Phase C)
 ├── data/
 │   ├── raw/                       # .gitignored — raw Excel lives here
 │   └── processed/                 # .gitignored — generated CSVs
