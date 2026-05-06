@@ -91,6 +91,56 @@ uv run python -m pipelines.run_pipeline  # the pipeline
 
 > **Note** — `pyproject.toml` is the single source of truth for dependencies. The legacy `requirements.txt` was removed in the Phase A cleanup; install everything through `uv sync`.
 
+### 1d. Experiment tracking with MLflow (Phase D)
+
+Phase D introduces an MLflow tracking server, run via Docker Compose. Every training run becomes a permanent record: params, metrics, fitted artefacts, SHAP plots, git SHA, library versions. Both models (`credit_scorecard` and `credit_rf_challenger`) auto-register in the MLflow Model Registry.
+
+**One-time: install MLflow extras**
+
+```powershell
+uv sync --extra warehouse --extra mlflow
+```
+
+(or `uv sync --all-extras` if you want everything pulled in.)
+
+**Bring the MLflow tracking server online** (runs in Docker Compose, lives at `localhost:5000`):
+
+```powershell
+docker compose up -d mlflow
+```
+
+The `-d` runs it in the background. Check it's healthy:
+
+```powershell
+docker compose ps                # status of all services
+docker compose logs -f mlflow    # tail logs (Ctrl+C to stop following)
+```
+
+Browse to **http://localhost:5000** — you'll see the empty MLflow UI.
+
+**Run training with tracking:**
+
+```powershell
+uv run python -m src.training.train
+```
+
+This refreshes the warehouse, trains both models, and logs everything to MLflow. Refresh the browser tab — you'll see the run, click into it for metrics, params, artefacts, and the SHAP summary plot for the RF challenger.
+
+**Promote a model to Staging** (manual, via UI):
+
+1. In the MLflow UI, click "Models" in the left nav
+2. Click `credit_scorecard` → click the version (e.g., "Version 1")
+3. Top-right: "Stage: None" dropdown → "Transition to → Staging"
+
+That stage is now the addressable URI `models:/credit_scorecard/Staging`. Phase F's serving container will load whatever's at that stage.
+
+**Stop the stack when done:**
+
+```powershell
+docker compose down              # stops services, keeps mlflow-data
+docker compose down -v           # ALSO wipes mlflow-data (DANGER)
+```
+
 ### 1c. Reading from a SQL warehouse (Phase C)
 
 Phase C introduces a DuckDB-backed warehouse so the pipeline reads SQL instead of an Excel file. The warehouse is a single file at `warehouse/credit.duckdb` (gitignored) with three logical schemas:
@@ -280,6 +330,8 @@ Machine-Learning-For-Credit-Prediction-Phase-3/
 │   │   ├── warehouse.py           # DuckDB warehouse: raw/staging/marts (Phase C)
 │   │   └── contracts/
 │   │       └── application.py     # Great Expectations data contract (Phase C)
+│   ├── training/
+│   │   └── train.py               # MLflow-aware training entry (Phase D)
 │   ├── features/
 │   │   └── features.py            # Row-wise engineered features
 │   └── models/
@@ -293,8 +345,11 @@ Machine-Learning-For-Credit-Prediction-Phase-3/
 │   ├── test_config.py             # Locks in TARGET / IDs / leakage invariants
 │   ├── test_settings.py           # Smoke tests for src/settings.py (Phase A)
 │   ├── test_pipeline_smoke.py     # Smoke tests for the pipeline entry point (Phase B)
-│   └── test_warehouse.py          # Smoke tests for src/data/warehouse.py (Phase C)
+│   ├── test_warehouse.py          # Smoke tests for src/data/warehouse.py (Phase C)
+│   └── test_training.py           # Integration tests for src/training/train.py (Phase D)
+├── docker-compose.yml             # Local services: MLflow (Phase D), more from Phase E
 ├── warehouse/                     # .gitignored — credit.duckdb lives here (Phase C)
+├── mlflow-data/                   # .gitignored — MLflow state (Docker volume) (Phase D)
 ├── data/
 │   ├── raw/                       # .gitignored — raw Excel lives here
 │   └── processed/                 # .gitignored — generated CSVs

@@ -31,7 +31,12 @@ dependencies = [
 [project.optional-dependencies]
 warehouse = [
     "duckdb>=1.0,<2.0",
-    "great-expectations>=1.0,<2.0",
+    # NOTE: Great Expectations was the original contract validator (Phase C),
+    # but GE 1.5.x pins pandas<2.2 (incompatible with our 2.2+ requirement)
+    # and GE 1.6+ has a known wheel-packaging bug. Replaced with a hand-rolled
+    # pandas validator in src/data/contracts/application.py - same five checks,
+    # same ContractViolation exception, zero GE dependency. Re-add GE here if
+    # a future release resolves the pandas pin AND ships clean wheels.
 ]
 mlflow = [
     "mlflow>=2.16,<3.0",
