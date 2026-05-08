@@ -4,7 +4,7 @@ version = "0.3.0"
 description = "Credit risk ML pipeline (Phase 3): scorecard + RF + governance"
 authors = [{ name = "Jurgen Bouwer", email = "jurgenb@axconsultgroup.com" }]
 readme = "README.md"
-requires-python = ">=3.11,<3.13"
+requires-python = ">=3.11,<3.12"
 license = { text = "Proprietary" }
 
 # ---------------------------------------------------------------------------
@@ -25,18 +25,19 @@ dependencies = [
     "pydantic-settings>=2.2,<3.0",
 ]
 
-# Optional dependency groups for later phases. Install with e.g.
+# Optional dependency groups, installed selectively. Examples:
 #   uv sync --extra warehouse
 #   uv sync --all-extras
 [project.optional-dependencies]
 warehouse = [
     "duckdb>=1.0,<2.0",
-    # NOTE: Great Expectations was the original contract validator (Phase C),
-    # but GE 1.5.x pins pandas<2.2 (incompatible with our 2.2+ requirement)
-    # and GE 1.6+ has a known wheel-packaging bug. Replaced with a hand-rolled
-    # pandas validator in src/data/contracts/application.py - same five checks,
-    # same ContractViolation exception, zero GE dependency. Re-add GE here if
-    # a future release resolves the pandas pin AND ships clean wheels.
+    # The data contract validator is hand-rolled in
+    # src/data/contracts/application.py rather than depending on Great
+    # Expectations. GE 1.5.x pins pandas<2.2 (incompatible with our 2.2+
+    # requirement) and GE 1.6+ has a known wheel-packaging bug; the
+    # hand-rolled validator runs the same five checks via plain pandas
+    # with zero external dependency. Re-add GE here if a future release
+    # resolves both issues.
 ]
 mlflow = [
     "mlflow>=2.16,<3.0",
@@ -117,6 +118,6 @@ addopts = "-q --disable-warnings --strict-markers"
 testpaths = ["tests", "pipelines"]
 python_files = ["test_*.py", "*_test.py"]
 markers = [
-    "integration: marks tests that exercise the full pipeline end-to-end (deselect with '-m \"not integration\"')",
+    "integration: marks tests that run the full pipeline end-to-end (deselect with '-m \"not integration\"')",
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
 ]

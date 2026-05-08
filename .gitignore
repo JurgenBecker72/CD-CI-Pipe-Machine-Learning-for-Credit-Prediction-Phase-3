@@ -17,6 +17,8 @@ dist/
 venv/
 env/
 ENV/
+# Locked-folder leftovers from venv rebuilds (Windows file-handle issues)
+*-old-locked/
 
 # ---------- uv ----------
 # uv.lock IS committed (reproducibility) — do not ignore it.
@@ -24,11 +26,10 @@ ENV/
 .uv-cache/
 uv-receipt.json
 
-# ---------- Phase A: production scaffolding scratch ----------
-# Local services data (Phase B-onwards):
+# ---------- Local services data ----------
 warehouse/
+mlflow-data
 mlflow-data/
-# Local-only Docker compose state:
 .docker-compose-state/
 
 # ---------- IDE / OS ----------
@@ -38,6 +39,8 @@ mlflow-data/
 *.swo
 .DS_Store
 Thumbs.db
+# Microsoft Office lock files (created when a doc is open in Word/Excel/PowerPoint)
+~$*
 
 # ---------- Secrets ----------
 .env
@@ -78,6 +81,7 @@ archive/**/reports/*.pdf
 review_report.docx
 review_report.js
 WJARR-2025-2266.pdf
+**/WJARR-2025-2266.pdf
 Claude fix OpenAI code/
 
 # ---------- Logs ----------

@@ -1,1 +1,1 @@
-"""MLflow-aware training entry points (Phase D)."""
+"""MLflow-aware training entry points."""

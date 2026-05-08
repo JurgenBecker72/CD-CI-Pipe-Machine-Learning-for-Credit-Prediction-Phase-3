@@ -106,15 +106,14 @@ class Settings(BaseSettings):
     )
 
     # ------------------------------------------------------------------
-    # MLflow (Phase C onwards) — placeholders so callers can already
-    # depend on the contract; Phase C wires them up to a running server.
+    # MLflow tracking server
     # ------------------------------------------------------------------
     mlflow_tracking_uri: str = "http://localhost:5000"
     mlflow_experiment_name: str = "credit-scorecard"
     mlflow_artefact_root: str = ""  # empty = MLflow default
 
     # ------------------------------------------------------------------
-    # DuckDB warehouse (Phase B onwards) — placeholder.
+    # DuckDB warehouse
     # ------------------------------------------------------------------
     duckdb_path: Path = ROOT / "warehouse" / "credit.duckdb"
 

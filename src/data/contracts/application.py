@@ -50,10 +50,11 @@ EXPECTED_BAD_RATE_MAX = 0.28
 # Primary key column.
 PRIMARY_KEY = "dummy_id"
 
-# DRA dimension scores are normalised; declare a generous range so the
-# contract catches "vendor changed scoring scale" not minor distribution drift.
-DRA_MIN = -10.0
-DRA_MAX = 10.0
+# DRA dimension scores are on a 0-100 percentile-style scale. The contract
+# catches "vendor changed scoring scale" rather than minor distribution drift,
+# so the band is intentionally generous around the working range.
+DRA_MIN = 0.0
+DRA_MAX = 100.0
 
 
 # ----------------------------------------------------------------------------

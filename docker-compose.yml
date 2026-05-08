@@ -1,10 +1,8 @@
 # docker-compose.yml
 # -----------------------------------------------------------------------------
-# Local services that the credit pipeline depends on.
-#
-# Phase D introduces just one: MLflow tracking server. Phase E will add
-# Spark; Phase H will add Prometheus + Grafana. The same `docker compose up`
-# command brings whatever's defined here online.
+# Local services that the credit pipeline depends on. Currently the MLflow
+# tracking server. Additional services (Prometheus, Grafana) can be added
+# alongside without changing the bring-up workflow.
 #
 # Bring up the stack:    docker compose up -d
 # Tear down:             docker compose down
@@ -13,7 +11,7 @@
 # -----------------------------------------------------------------------------
 
 services:
-  # ----- MLflow tracking server (Phase D) ----------------------------------
+  # ----- MLflow tracking server --------------------------------------------
   # Stores run metadata in SQLite (a single file inside mlflow-data/) and
   # artefacts (pickled models, plots, etc.) as files in mlflow-data/artefacts/.
   # SQLite is fine for single-developer use; production swaps to Postgres.

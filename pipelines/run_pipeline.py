@@ -19,9 +19,9 @@ from src.models.train_scorecard import train_scorecard_model
 def load_data(path=None):
     """Load training data.
 
-    Phase C onwards: by default the pipeline reads from the DuckDB warehouse
+    By default the pipeline reads from the DuckDB warehouse
     (marts.applicant_features). The warehouse is refreshed from the source
-    Excel on every call, gated by the Great Expectations data contract.
+    Excel on every call, gated by the data contract.
 
     Pass a `path` (or use --data-path on the CLI) to bypass the warehouse
     and load directly from an Excel file. Useful for ad-hoc testing on a
@@ -107,7 +107,7 @@ def evaluate(y_true, probs):
 def run_pipeline(path=None):
     """End-to-end training pipeline.
 
-    Without arguments, reads from the DuckDB warehouse (Phase C default).
+    Without arguments, reads from the DuckDB warehouse by default.
     Pass a path to override and read directly from an Excel file.
     """
     print("\n===== START PIPELINE =====")
@@ -165,10 +165,10 @@ def run_pipeline(path=None):
 def main() -> None:
     """CLI entry point.
 
-    Default behaviour (Phase C onwards): refresh the DuckDB warehouse from
-    the source dataset, then read marts.applicant_features. The Great
-    Expectations contract runs at the raw -> staging boundary; a failed
-    contract aborts the run with a clear error.
+    Default behaviour: refresh the DuckDB warehouse from the source
+    dataset, then read marts.applicant_features. The data contract runs
+    at the raw -> staging boundary; a failed contract aborts the run
+    with a clear error.
 
         python -m pipelines.run_pipeline                                # warehouse-backed
         python -m pipelines.run_pipeline --data-path /path/other.xlsx   # bypass warehouse

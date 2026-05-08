@@ -1,8 +1,9 @@
 """DuckDB warehouse for the credit pipeline.
 
 This module is the *only* place in the project that talks to DuckDB. Everything
-else goes through these helpers, so when we eventually swap DuckDB for
-Snowflake (Phase C.5) only this file changes.
+else goes through these helpers, so swapping DuckDB for Snowflake (or any
+other warehouse implementing the same contract) requires changes in this
+file alone.
 
 Three logical schemas — the lakehouse / medallion pattern:
 
@@ -114,18 +115,26 @@ def ingest_excel(path: Path | str, *, table: str = "raw.application") -> int:
 def promote_to_staging() -> int:
     """Move data from raw.application to staging.application.
 
-    Currently a near-passthrough: types come from DuckDB's inference. The
-    data contract (src/data/contracts/application.py) runs *before* this
-    promotes, raising on any failure.
+    Drops leakage columns at the boundary (the silver layer should be
+    clean of any post-decision performance fields) and then runs the
+    data contract on the cleaned frame. The contract fails loud on any
+    expectation break. Types come from DuckDB's inference.
     """
-    # Lazy import to avoid making great_expectations a hard dep when
-    # someone only needs the warehouse for read.
+    from src.config import LEAKAGE_COLUMNS
     from src.data.contracts.application import validate_application
 
     with connect() as con:
         df_raw = con.execute("SELECT * FROM raw.application").fetchdf()
 
-    # Run the data contract first. Fails LOUD if any expectation breaks.
+    # Strip leakage columns BEFORE validation. Raw legitimately holds
+    # everything the vendor sent; staging is the first cleaned layer and
+    # must not carry post-decision performance fields into downstream use.
+    leakage_present = [c for c in LEAKAGE_COLUMNS if c in df_raw.columns]
+    if leakage_present:
+        print(f"[promote_to_staging] dropping leakage columns: {leakage_present}")
+        df_raw = df_raw.drop(columns=leakage_present)
+
+    # Run the data contract on the cleaned frame.
     validate_application(df_raw)
 
     with connect() as con:

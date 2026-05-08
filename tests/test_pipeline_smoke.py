@@ -3,8 +3,8 @@
 These don't run the full pipeline (that needs the raw Excel file mounted
 and is slow). They confirm the module is importable, the CLI parses args
 correctly, and the function signatures haven't drifted. This is the cheap
-sanity check that catches "did Docker break the import path" issues
-during Phase B build cycles.
+sanity check that catches "did Docker break the import path" issues at
+build time.
 """
 
 from __future__ import annotations
@@ -73,6 +73,6 @@ def test_run_pipeline_end_to_end_smoke(tmp_path):
 
     This is intentionally NOT in the default `pytest -m "not integration"`
     set — it requires the raw Excel and takes seconds. CI runs it as a
-    separate job from Phase D onwards.
+    separate job.
     """
-    pytest.skip("Full integration test wired up in Phase D when MLflow is available")
+    pytest.skip("Full integration test runs in the MLflow-aware training entry")
