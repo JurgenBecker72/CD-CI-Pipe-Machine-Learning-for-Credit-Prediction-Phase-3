@@ -31,7 +31,7 @@ process.
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 
 from pydantic import Field
@@ -47,7 +47,7 @@ from src.paths import (
 )
 
 
-class Environment(str, Enum):
+class Environment(StrEnum):
     """Deployment environment. Used to gate environment-specific behavior."""
 
     LOCAL = "local"
