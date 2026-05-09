@@ -1,12 +1,12 @@
 name: CI
 
-# Triggered on every PR (any target branch) and on pushes to main / develop.
-# Keep this workflow narrow — lint + tests. Build / publish belong in a
-# separate workflow gated on push to main (added in a later phase).
+# Triggered on every PR (any target branch) and on pushes to the active
+# development branches. Keep this workflow narrow — lint + tests. Build /
+# publish belong in a separate workflow gated on push to main.
 "on":
   pull_request:
   push:
-    branches: [main, develop]
+    branches: [main, develop, production]
 
 # Cancel a previous run when a new commit arrives on the same ref.
 concurrency:
