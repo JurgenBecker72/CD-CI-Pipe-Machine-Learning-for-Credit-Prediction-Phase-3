@@ -44,8 +44,13 @@ jobs:
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
 
-      - name: Sync dependencies (runtime + dev)
-        run: uv sync --frozen --group dev
+      - name: Sync dependencies (runtime + all extras + dev)
+        # All optional extras (warehouse, mlflow, spark, serving) are
+        # installed so test files can import their modules at collection
+        # time. Integration-marked tests are still excluded from the
+        # pytest run via -m "not integration"; this just makes the import
+        # graph resolvable on a clean Linux runner.
+        run: uv sync --frozen --all-extras --group dev
 
       - name: Ruff (lint)
         run: uv run ruff check .
