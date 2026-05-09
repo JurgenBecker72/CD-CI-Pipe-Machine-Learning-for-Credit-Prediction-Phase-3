@@ -1,15 +1,21 @@
-"""MLflow-aware training entry point (Phase D).
+"""MLflow-aware training entry point.
 
-Wraps the existing scorecard + RF training (from pipelines/run_pipeline.py)
-in an MLflow run, logging:
+Wraps the scorecard + RF training in an MLflow run, logging:
 
     Params       hyperparameters, seeds, split sizes
     Metrics      AUC, Gini, KS for both models; bad rates; calibration
-    Artefacts    fitted scaler, calibrated LR, RF, SHAP summary plot
+    Artefacts    fitted scaler, calibrated LR, RF, SHAP summary plot,
+                 fitted feature pipeline (Spark ML Pipeline)
     Tags         git SHA, Python version, library versions, data version
     Signature    input/output schema for both models
     Models       both registered in the MLflow Model Registry as
                  credit_scorecard and credit_rf_challenger
+
+Feature engineering is delegated to a Spark ML Pipeline (see
+`src.features.pipeline.build_feature_pipeline`). The pipeline is fit on
+training rows only, applied to both train and test under the same
+frozen state, and persisted alongside the model so train-time and
+inference-time transformations are bit-for-bit identical.
 
 Usage
 -----
@@ -43,6 +49,7 @@ from sklearn.model_selection import train_test_split
 
 from src.config import ID_COLUMNS, LEAKAGE_COLUMNS, RANDOM_STATE, TARGET
 from src.data.warehouse import read_marts, refresh
+from src.features.pipeline import build_feature_pipeline
 from src.models.train_scorecard import train_scorecard_model
 from src.settings import settings
 
@@ -52,6 +59,8 @@ from src.settings import settings
 
 SCORECARD_MODEL_NAME = "credit_scorecard"
 CHALLENGER_MODEL_NAME = "credit_rf_challenger"
+
+TEST_SIZE = 0.3
 
 
 # ----------------------------------------------------------------------------
@@ -106,7 +115,7 @@ def _drop_ids_and_leakage(df: pd.DataFrame) -> pd.DataFrame:
 def _impute_train_test(
     X_train: pd.DataFrame, X_test: pd.DataFrame
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Median impute on train only - same behaviour as run_pipeline.py."""
+    """Median impute on train only - prevents test-set leakage into imputation."""
     X_train = X_train.copy()
     X_test = X_test.copy()
     numeric_cols = X_train.select_dtypes(include=[np.number]).columns
@@ -116,6 +125,44 @@ def _impute_train_test(
         if col in X_test.columns:
             X_test[col] = X_test[col].fillna(medians[col])
     return X_train, X_test
+
+
+def _start_spark():
+    """Start (or reuse) a SparkSession sized for local single-node training."""
+    from src.features.spark_session import get_spark
+
+    return get_spark("credit-pipeline-training")
+
+
+def _engineer_features(
+    train_pdf: pd.DataFrame,
+    test_pdf: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame, Any]:
+    """Run the Spark ML feature pipeline on the (already-split) partitions.
+
+    The pipeline is fit on `train_pdf` only; the same fitted instance
+    transforms both train and test. The fitted pipeline is returned so
+    the caller can persist it as an MLflow artefact.
+
+    Returns
+    -------
+    train_with_features, test_with_features, fitted_pipeline
+        Both dataframes are pandas (post-Spark round-trip). The pipeline
+        is a `pyspark.ml.PipelineModel`.
+    """
+    spark = _start_spark()
+    spark.sparkContext.setLogLevel("WARN")
+    print(f"  Spark version: {spark.version}")
+
+    train_sdf = spark.createDataFrame(train_pdf)
+    test_sdf = spark.createDataFrame(test_pdf)
+
+    pipeline = build_feature_pipeline()
+    fitted = pipeline.fit(train_sdf)
+
+    train_with_features = fitted.transform(train_sdf).toPandas()
+    test_with_features = fitted.transform(test_sdf).toPandas()
+    return train_with_features, test_with_features, fitted
 
 
 def _log_shap_summary(model: Any, X_sample: pd.DataFrame, artefact_name: str) -> None:
@@ -162,7 +209,9 @@ def train_with_tracking(
     """Run end-to-end training inside an MLflow run.
 
     Returns the MLflow run_id of the completed run. Both models
-    (`credit_scorecard` and `credit_rf_challenger`) are registered.
+    (`credit_scorecard` and `credit_rf_challenger`) are registered, and
+    the fitted feature pipeline is logged as an artefact so train-time
+    and inference-time transformations are bit-for-bit identical.
 
     Parameters
     ----------
@@ -192,12 +241,32 @@ def train_with_tracking(
     print(f"Loaded data from marts.applicant_features: {df.shape}")
 
     df = _drop_ids_and_leakage(df)
-    X = df.drop(columns=[TARGET])
-    y = df[TARGET]
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.3, stratify=y, random_state=RANDOM_STATE
+    # ------------------------------------------------------------------
+    # Stratified split in pandas, then run feature engineering in Spark.
+    #
+    # Stratification preserves the target distribution across train/test
+    # (Spark's randomSplit does not stratify); doing the split in pandas
+    # first and converting each partition to Spark separately keeps the
+    # leakage fix intact because the feature pipeline still fits on the
+    # train partition only.
+    # ------------------------------------------------------------------
+    train_pdf_raw, test_pdf_raw = train_test_split(
+        df, test_size=TEST_SIZE, stratify=df[TARGET], random_state=RANDOM_STATE
     )
+    print(f"  train rows: {len(train_pdf_raw):,}")
+    print(f"  test rows:  {len(test_pdf_raw):,}")
+
+    print("\n===== FEATURE ENGINEERING (Spark ML Pipeline) =====")
+    train_pdf, test_pdf, fitted_features = _engineer_features(train_pdf_raw, test_pdf_raw)
+    print(f"  train shape after features: {train_pdf.shape}")
+    print(f"  test  shape after features: {test_pdf.shape}")
+
+    X_train = train_pdf.drop(columns=[TARGET])
+    y_train = train_pdf[TARGET]
+    X_test = test_pdf.drop(columns=[TARGET])
+    y_test = test_pdf[TARGET]
+
     X_train, X_test = _impute_train_test(X_train, X_test)
 
     # ------------------------------------------------------------------
@@ -213,16 +282,25 @@ def train_with_tracking(
                 "git_sha": sha,
                 "git_dirty": str(dirty),
                 "python_version": platform.python_version(),
-                "phase": "D",
                 "data_source": "duckdb:marts.applicant_features",
             }
         )
+
+        # ---- Persist + log the fitted feature pipeline ---------------
+        # Saved per-run so historical pipelines are recoverable for any
+        # registered model version. The directory is logged as an MLflow
+        # artefact under `feature_pipeline/`.
+        feature_pipeline_path = Path(settings.models_dir) / f"feature_pipeline_{run.info.run_id}"
+        feature_pipeline_path.parent.mkdir(parents=True, exist_ok=True)
+        fitted_features.write().overwrite().save(str(feature_pipeline_path))
+        mlflow.log_artifacts(str(feature_pipeline_path), artifact_path="feature_pipeline")
+        print(f"  Logged fitted feature pipeline -> {feature_pipeline_path}")
 
         # ---- Params (inputs that affect the model) -------------------
         mlflow.log_params(
             {
                 "random_state": RANDOM_STATE,
-                "test_size": 0.3,
+                "test_size": TEST_SIZE,
                 "n_train": len(X_train),
                 "n_test": len(X_test),
                 "n_features": X_train.shape[1],
@@ -234,13 +312,21 @@ def train_with_tracking(
         # ---- Train + log scorecard -----------------------------------
         print("\n===== TRAINING SCORECARD =====")
         scorecard, scores_df, summary = train_scorecard_model(X_train, y_train, X_test, y_test)
-        scorecard_probs = scorecard.predict_proba(X_test)[:, 1]
+
+        # The scorecard fits on a subset of numeric features; pull that
+        # subset off the fitted estimator so subsequent prediction calls
+        # match the schema the model expects.
+        scorecard_features = list(scorecard.feature_names_in_)
+        X_test_scorecard = X_test[scorecard_features]
+
+        scorecard_probs = scorecard.predict_proba(X_test_scorecard)[:, 1]
         scorecard_metrics = _evaluate(y_test, scorecard_probs)
         for name, value in scorecard_metrics.items():
             mlflow.log_metric(f"scorecard_{name}", value)
 
-        # Input example + signature for the scorecard
-        scorecard_example = X_test.head(5)
+        # Input example + signature use the same feature subset so the
+        # logged signature matches what scoring callers must provide.
+        scorecard_example = X_test_scorecard.head(5)
         scorecard_signature = infer_signature(
             scorecard_example, scorecard.predict_proba(scorecard_example)
         )
@@ -285,7 +371,7 @@ def train_with_tracking(
         # ---- Print + return ------------------------------------------
         print(
             f"\n===== RUN COMPLETE =====\n"
-            f"  run_id:   {run.info.run_id}\n"
+            f"  run_id:    {run.info.run_id}\n"
             f"  scorecard: AUC={scorecard_metrics['auc']:.4f} "
             f"Gini={scorecard_metrics['gini']:.4f} KS={scorecard_metrics['ks']:.4f}\n"
             f"  rf:        AUC={rf_metrics['auc']:.4f} "

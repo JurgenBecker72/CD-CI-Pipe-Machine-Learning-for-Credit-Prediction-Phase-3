@@ -91,6 +91,78 @@ uv run python -m pipelines.run_pipeline  # the pipeline
 
 > **Note** — `pyproject.toml` is the single source of truth for dependencies. The legacy `requirements.txt` was removed in the Phase A cleanup; install everything through `uv sync`.
 
+### 1e. Distributed feature engineering with PySpark (Phase E)
+
+Phase E ports the row-wise feature engineering to PySpark and introduces a custom `Estimator`/`Transformer` pair to fix a pre-split data leak that had been hiding in `src/features/features.py` since the project began.
+
+**The leak** — quantile flag features (e.g. `high_risk_flag`, `low_stability_flag`) were computed on the *whole* dataframe before the train/test split. The 70th-percentile threshold therefore knew about test rows; the model's reported AUC was structurally optimistic.
+
+**The fix** — bundle the threshold-learning logic into a Spark ML `Estimator` whose `fit()` only ever sees training data. The fitted state lives in a `Model` (Transformer) that travels alongside the trained scorecard as an MLflow artefact. Train-time and inference-time transformations become bit-for-bit identical by construction; leakage is structurally impossible.
+
+**The QuantileFlagger Estimator/Transformer** (`src/features/quantile_flagger.py`):
+
+```python
+class QuantileFlagger(Estimator, DefaultParamsReadable, DefaultParamsWritable):
+    """Learns high/low quantile thresholds on a training dataframe."""
+
+    def _fit(self, dataset: DataFrame) -> "QuantileFlaggerModel":
+        cols = self.getInputCols()
+        thresholds: dict[str, dict[str, float]] = {}
+        for col in cols:
+            low_t, high_t = dataset.approxQuantile(
+                col,
+                [self.getLowQuantile(), self.getHighQuantile()],
+                0.001,
+            )
+            thresholds[col] = {"low": float(low_t), "high": float(high_t)}
+        return QuantileFlaggerModel(inputCols=cols, thresholds=thresholds)
+```
+
+The fitted `QuantileFlaggerModel` then emits two integer flag columns per input — `{col}_high_flag` and `{col}_low_flag` — using the frozen thresholds. A custom `MLWriter` persists the thresholds as a `thresholds.json` sidecar that a model risk reviewer can audit without loading Spark.
+
+**The composed Pipeline** (`src/features/pipeline.py`):
+
+```python
+def build_feature_pipeline(...) -> Pipeline:
+    return Pipeline(stages=[
+        RowWiseFeatures(),                    # stateless interaction terms
+        QuantileFlagger(                      # fits thresholds on TRAIN ONLY
+            inputCols=QUANTILE_FLAG_COLUMNS,
+            highQuantile=0.7,
+            lowQuantile=0.3,
+        ),
+    ])
+```
+
+**Integration with training** (`src/training/train.py`):
+
+The training entry takes a brief detour through Spark for the feature-engineering step, then returns to pandas for the existing scorecard + RF training:
+
+```python
+train_pdf, test_pdf, fitted_features = _engineer_features(train_pdf_raw, test_pdf_raw)
+# ... continues with existing sklearn-based training ...
+
+# Persist the fitted feature pipeline as an MLflow artefact
+fitted_features.write().overwrite().save(str(feature_pipeline_path))
+mlflow.log_artifacts(str(feature_pipeline_path), artifact_path="feature_pipeline")
+```
+
+The fitted feature pipeline lands in MLflow's artifact store next to the registered models, so any future deployment of `credit_scorecard@v17` automatically gets the matching feature transformations — no remembered context, no drift.
+
+**Tests** — `tests/test_spark_features.py` covers eight integration scenarios including a structural leakage-prevention test that asserts thresholds fitted on `train` differ from thresholds fitted on `train+test` when the test partition has a different distribution. If the QuantileFlagger ever silently leaks, this test fails loudly.
+
+**Run the local Spark sanity check** (one-off, ~30s):
+
+```powershell
+uv run python scripts/smoke_quantile_flagger.py
+```
+
+This boots a SparkSession, fits the QuantileFlagger on a synthetic 1,000-row sample, and prints the learned thresholds plus a side-by-side comparison of fit-on-train vs fit-on-train+test thresholds — visible proof that the abstraction does what it claims.
+
+**Setup notes for Windows** — PySpark 3.5 needs Java 17, Hadoop's `winutils.exe`, and (recommended) Python 3.11. Run `scripts/diagnose_spark.py` after a fresh setup to verify the environment in 7 stages.
+
+---
+
 ### 1d. Experiment tracking with MLflow (Phase D)
 
 Phase D introduces an MLflow tracking server, run via Docker Compose. Every training run becomes a permanent record: params, metrics, fitted artefacts, SHAP plots, git SHA, library versions. Both models (`credit_scorecard` and `credit_rf_challenger`) auto-register in the MLflow Model Registry.
@@ -318,7 +390,9 @@ Machine-Learning-For-Credit-Prediction-Phase-3/
 ├── scripts/
 │   ├── docker-build.ps1           # Build the training image (Phase B)
 │   ├── docker-smoke.ps1           # Smoke-test the built image (Phase B)
-│   └── docker-run.ps1             # Run the full pipeline inside a container (Phase B)
+│   ├── docker-run.ps1             # Run the full pipeline inside a container (Phase B)
+│   ├── smoke_quantile_flagger.py  # Local Spark + QuantileFlagger sanity check (Phase E)
+│   └── diagnose_spark.py          # 7-stage Spark environment diagnostic (Phase E)
 ├── src/
 │   ├── config.py                  # Static project knowledge — target, IDs, leakage, feature groups
 │   ├── paths.py                   # Anchored path resolution
@@ -331,9 +405,13 @@ Machine-Learning-For-Credit-Prediction-Phase-3/
 │   │   └── contracts/
 │   │       └── application.py     # Great Expectations data contract (Phase C)
 │   ├── training/
-│   │   └── train.py               # MLflow-aware training entry (Phase D)
+│   │   └── train.py               # MLflow-aware training entry (Phase D + Phase E feature pipeline)
 │   ├── features/
-│   │   └── features.py            # Row-wise engineered features
+│   │   ├── features.py            # Row-wise engineered features (legacy pandas implementation)
+│   │   ├── spark_features.py      # Stateless RowWiseFeatures Transformer (Phase E)
+│   │   ├── quantile_flagger.py    # Custom Estimator/Transformer for leakage-free flags (Phase E)
+│   │   ├── pipeline.py            # build_feature_pipeline() factory (Phase E)
+│   │   └── spark_session.py       # Shared SparkSession factory (Phase E)
 │   └── models/
 │       ├── train_scorecard.py     # Calibrated logistic scorecard + A–E bands
 │       ├── train_rf.py            # Random forest benchmark
@@ -346,8 +424,9 @@ Machine-Learning-For-Credit-Prediction-Phase-3/
 │   ├── test_settings.py           # Smoke tests for src/settings.py (Phase A)
 │   ├── test_pipeline_smoke.py     # Smoke tests for the pipeline entry point (Phase B)
 │   ├── test_warehouse.py          # Smoke tests for src/data/warehouse.py (Phase C)
-│   └── test_training.py           # Integration tests for src/training/train.py (Phase D)
-├── docker-compose.yml             # Local services: MLflow (Phase D), more from Phase E
+│   ├── test_training.py           # Integration tests for src/training/train.py (Phase D)
+│   └── test_spark_features.py     # Integration tests for the Spark feature pipeline (Phase E)
+├── docker-compose.yml             # Local services: MLflow tracking (Phase D)
 ├── warehouse/                     # .gitignored — credit.duckdb lives here (Phase C)
 ├── mlflow-data/                   # .gitignored — MLflow state (Docker volume) (Phase D)
 ├── data/
@@ -364,7 +443,8 @@ Machine-Learning-For-Credit-Prediction-Phase-3/
 │   ├── PRODUCTION_BUILD_PLAN.pdf  # Printable version of the roadmap
 │   ├── DIGEST.md                  # Second-eyes review log (April 2026)
 │   ├── architecture/
-│   │   └── Credit_Pipeline_Production_Architecture.docx  # Full design doc
+│   │   ├── Credit_Pipeline_Production_Architecture.docx  # Full design doc
+│   │   └── Production_ML_System_Reference.docx          # Roles, artefacts, lifecycle reference
 │   ├── images/                    # Infographic, pipeline diagrams
 │   └── references/                # Research papers
 ├── README.md

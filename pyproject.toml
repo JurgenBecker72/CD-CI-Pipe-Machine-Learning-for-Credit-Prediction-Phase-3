@@ -111,6 +111,21 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
 "tests/**" = ["S101"]
+# Spark ML Estimator/Transformer APIs are inherited from a Java-derived
+# parent (pyspark.ml.Estimator). The base class declares attributes and
+# methods in camelCase (inputCols, setInputCols, saveImpl) and the Spark
+# machinery looks them up by exact name; renaming would break the
+# protocol. The `F` alias for pyspark.sql.functions is universal Spark
+# idiom. These exemptions are scoped tightly to files that integrate
+# with Spark ML.
+"src/features/quantile_flagger.py" = ["N802", "N803", "N812", "N815"]
+"src/features/spark_features.py" = ["N802", "N812"]
+"src/features/spark_session.py" = ["N812"]
+"src/features/pipeline.py" = ["N812"]
+"src/training/train.py" = ["N812"]
+"scripts/smoke_quantile_flagger.py" = ["N812"]
+"scripts/diagnose_spark.py" = ["N812"]
+"tests/test_spark_features.py" = ["N802", "N812", "N815", "S101"]
 
 [tool.pytest.ini_options]
 minversion = "8.0"
