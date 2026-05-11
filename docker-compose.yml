@@ -25,7 +25,9 @@ services:
       --host 0.0.0.0
       --port 5000
       --backend-store-uri sqlite:////mlflow/mlflow.db
-      --default-artifact-root /mlflow/artefacts
+      --artifacts-destination /mlflow/artefacts
+      --default-artifact-root mlflow-artifacts:/
+      --serve-artifacts
     ports:
       - "5000:5000"        # browse to http://localhost:5000
     volumes:
