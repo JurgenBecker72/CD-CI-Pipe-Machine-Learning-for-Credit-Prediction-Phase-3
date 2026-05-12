@@ -86,10 +86,56 @@ uv run python -m pipelines.run_pipeline  # the pipeline
 > **Optional dependency groups** — extras are pulled in by phase, not all at once:
 > `uv sync --extra warehouse` for DuckDB + Great Expectations (Phase B),
 > `uv sync --extra mlflow` for MLflow + SHAP (Phase C),
-> `uv sync --extra serving` for FastAPI + Prometheus client (Phase E),
+> `uv sync --extra serving` for FastAPI + Prometheus client (Phase F),
 > `uv sync --all-extras` to pull everything for full local-stack work.
 
 > **Note** — `pyproject.toml` is the single source of truth for dependencies. The legacy `requirements.txt` was removed in the Phase A cleanup; install everything through `uv sync`.
+
+### 1f. Scoring service with FastAPI (Phase F)
+
+Phase F packages the registered model behind an HTTP service. A FastAPI application loads `models:/credit_scorecard@production` once at startup, runs the fitted feature pipeline against each incoming applicant, and returns a probability of default, an A–E band, and the top reason codes. The same image is what Phase G deploys to Kubernetes.
+
+**Service contract:**
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/healthz` | Liveness probe — the process is up. |
+| `GET` | `/readyz` | Readiness probe — model and quantile thresholds are loaded. Returns 503 until both are true. |
+| `GET` | `/model_info` | Model name, version, run ID, expected feature count, and quantile thresholds. |
+| `GET` | `/metrics` | Prometheus-format counters and gauges (request count, error count, average latency). |
+| `POST` | `/v1/score` | Scores a single applicant. Returns PD, score, band, reason codes, and full model provenance. |
+
+**Loader pattern.** The service loads the model exactly once via FastAPI's lifespan hook in `src/serving/app.py`. The loader (`src/serving/loader.py`) resolves the model URI against MLflow, downloads the fitted feature pipeline artefact, extracts the quantile thresholds as a plain dict, and reads the model's input column list from the registered MLflow model signature. Holding the bundle in memory means per-request latency is dominated by `predict_proba`, not registry round-trips.
+
+**Input schema.** `src/serving/schemas.py` builds `ApplicantPayload` at module import via `pydantic.create_model()` driven by `BASE_FEATURES` in `src/config.py`, so adding a feature there automatically widens the API contract. The schema is configured with `extra="forbid"` so any unknown field returns 422 — production services should not silently accept fields they don't understand.
+
+**Reason codes.** `src/serving/reason_codes.py` returns the top-three feature contributions per request and labels each `increases_risk` or `decreases_risk`. This is the customer-facing explanation channel that adjudicators and regulators consume.
+
+**Run the service locally:**
+
+```powershell
+# MLflow must be up so the loader has something to talk to
+docker compose up -d mlflow
+
+# Start the API
+uv run uvicorn src.serving.app:app --reload
+```
+
+Wait for `Application startup complete` and `[loader] loaded model credit_scorecard@production (version N)` before sending requests.
+
+**Smoke-test the full surface:**
+
+```powershell
+.\scripts\smoke_score.ps1
+```
+
+The script hits every endpoint in order and writes the full request/response trail to `scripts/smoke_score.log`. A healthy run shows 200 from every endpoint and a non-zero `feature_count` in the `/model_info` response.
+
+**Tests.** `tests/test_scoring_api.py` covers nine contract scenarios: schema strictness (extra fields rejected), missing-required-field rejection, type-coercion edges, readiness gating, `/model_info` shape, score response shape, reason-code count, idempotency on identical payloads, and the Prometheus metrics surface. All run against a stub model so the suite stays fast and offline.
+
+**Container image.** `docker/serving.Dockerfile` is a multi-stage uv build that ends in a slim runtime carrying only the serving dependencies — no PySpark, no Great Expectations, no training-time tooling. The image is what Phase G deploys to Kubernetes.
+
+---
 
 ### 1e. Distributed feature engineering with PySpark (Phase E)
 
@@ -386,13 +432,15 @@ Machine-Learning-For-Credit-Prediction-Phase-3/
 │   └── workflows/
 │       └── ci.yaml                # Lint + test on every PR (Phase A)
 ├── docker/
-│   └── training.Dockerfile        # Multi-stage image (uv builder → slim runtime, Phase A)
+│   ├── training.Dockerfile        # Multi-stage image (uv builder → slim runtime, Phase A)
+│   └── serving.Dockerfile         # Multi-stage image for the FastAPI scoring service (Phase F)
 ├── scripts/
 │   ├── docker-build.ps1           # Build the training image (Phase B)
 │   ├── docker-smoke.ps1           # Smoke-test the built image (Phase B)
 │   ├── docker-run.ps1             # Run the full pipeline inside a container (Phase B)
 │   ├── smoke_quantile_flagger.py  # Local Spark + QuantileFlagger sanity check (Phase E)
-│   └── diagnose_spark.py          # 7-stage Spark environment diagnostic (Phase E)
+│   ├── diagnose_spark.py          # 7-stage Spark environment diagnostic (Phase E)
+│   └── smoke_score.ps1            # End-to-end smoke test for the scoring API (Phase F)
 ├── src/
 │   ├── config.py                  # Static project knowledge — target, IDs, leakage, feature groups
 │   ├── paths.py                   # Anchored path resolution
@@ -412,11 +460,17 @@ Machine-Learning-For-Credit-Prediction-Phase-3/
 │   │   ├── quantile_flagger.py    # Custom Estimator/Transformer for leakage-free flags (Phase E)
 │   │   ├── pipeline.py            # build_feature_pipeline() factory (Phase E)
 │   │   └── spark_session.py       # Shared SparkSession factory (Phase E)
-│   └── models/
-│       ├── train_scorecard.py     # Calibrated logistic scorecard + A–E bands
-│       ├── train_rf.py            # Random forest benchmark
-│       ├── evaluate.py            # AUC / Gini / KS
-│       └── compare_models.py      # Side-by-side model comparison
+│   ├── models/
+│   │   ├── train_scorecard.py     # Calibrated logistic scorecard + A–E bands
+│   │   ├── train_rf.py            # Random forest benchmark
+│   │   ├── evaluate.py            # AUC / Gini / KS
+│   │   └── compare_models.py      # Side-by-side model comparison
+│   └── serving/
+│       ├── app.py                 # FastAPI app + lifespan-loaded model bundle (Phase F)
+│       ├── loader.py              # MLflow registry resolver + feature schema (Phase F)
+│       ├── schemas.py             # Strict ApplicantPayload generated from BASE_FEATURES (Phase F)
+│       ├── feature_engineering.py # Request-time feature pipeline application (Phase F)
+│       └── reason_codes.py        # Top-N feature contributions for adjudicators (Phase F)
 ├── pipelines/
 │   └── run_pipeline.py            # End-to-end orchestrator
 ├── tests/
@@ -425,7 +479,8 @@ Machine-Learning-For-Credit-Prediction-Phase-3/
 │   ├── test_pipeline_smoke.py     # Smoke tests for the pipeline entry point (Phase B)
 │   ├── test_warehouse.py          # Smoke tests for src/data/warehouse.py (Phase C)
 │   ├── test_training.py           # Integration tests for src/training/train.py (Phase D)
-│   └── test_spark_features.py     # Integration tests for the Spark feature pipeline (Phase E)
+│   ├── test_spark_features.py     # Integration tests for the Spark feature pipeline (Phase E)
+│   └── test_scoring_api.py        # Contract tests for the FastAPI scoring service (Phase F)
 ├── docker-compose.yml             # Local services: MLflow tracking (Phase D)
 ├── warehouse/                     # .gitignored — credit.duckdb lives here (Phase C)
 ├── mlflow-data/                   # .gitignored — MLflow state (Docker volume) (Phase D)
