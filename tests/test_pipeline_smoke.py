@@ -31,12 +31,17 @@ def test_run_pipeline_callable_with_path_arg():
     assert list(sig.parameters.keys()) == ["path"]
 
 
-def test_main_uses_settings_default_when_no_args(monkeypatch):
-    """`python -m pipelines.run_pipeline` (no args) should default to settings.raw_dataset_path."""
-    from pipelines.run_pipeline import main
-    from src.settings import settings
+def test_main_defaults_to_warehouse_mode_when_no_args(monkeypatch):
+    """`python -m pipelines.run_pipeline` (no args) must pass None.
 
-    captured: dict[str, str] = {}
+    The pipeline's data-loading layer interprets `path=None` as "read from
+    the DuckDB warehouse" (see `load_data` in pipelines.run_pipeline).
+    Defaulting to None therefore means the CLI defaults to warehouse-backed
+    loading; an explicit `--data-path` is the override for ad-hoc Excel reads.
+    """
+    from pipelines.run_pipeline import main
+
+    captured: dict[str, str | None] = {}
 
     def fake_run_pipeline(path):
         captured["path"] = path
@@ -47,7 +52,7 @@ def test_main_uses_settings_default_when_no_args(monkeypatch):
 
     main()
 
-    assert captured["path"] == str(settings.raw_dataset_path)
+    assert captured["path"] is None
 
 
 def test_main_respects_data_path_flag(monkeypatch):

@@ -21,19 +21,31 @@ from fastapi.testclient import TestClient
 
 
 class _StubModel:
-    """Stub model that returns a constant 0.3 probability of default.
+    """Stub sklearn-style classifier that returns a constant 0.3 PD.
 
     Exposes feature_names_in_ + coef_ so reason-code logic has something
-    to walk through. Keeps tests deterministic and decoupled from MLflow.
+    to walk through. Mirrors the raw-sklearn-estimator contract the
+    serving loader now produces (predict_proba returns 2D probabilities,
+    not class labels). Keeps tests deterministic and decoupled from MLflow.
     """
 
     def __init__(self, feature_names: list[str]) -> None:
         self.feature_names_in_ = np.array(feature_names, dtype=object)
         self.coef_ = np.linspace(-0.5, 0.5, len(feature_names)).reshape(1, -1)
 
-    def predict(self, df: pd.DataFrame) -> np.ndarray:
-        # Mimic mlflow.pyfunc 2D output: shape (n_rows, n_classes)
+    def predict_proba(self, df: pd.DataFrame) -> np.ndarray:
+        """Return P(class=0), P(class=1) per row -- shape (n_rows, 2)."""
         return np.array([[0.7, 0.3] for _ in range(len(df))])
+
+    def predict(self, df: pd.DataFrame) -> np.ndarray:
+        """Return the argmax of predict_proba -- shape (n_rows,)."""
+        return np.zeros(len(df), dtype=int)
+
+
+_DEFAULT_BAND_THRESHOLDS = {
+    "labels_low_to_high": ["E", "D", "C", "B", "A"],
+    "cut_points": [430.0, 460.0, 490.0, 520.0],
+}
 
 
 @pytest.fixture
@@ -52,6 +64,7 @@ def client(monkeypatch) -> TestClient:
             "total_risk_score": {"low": 20.0, "high": 80.0},
         },
         feature_names=["total_risk_score", "risk_drivers", "risk_mitigators"],
+        band_thresholds=_DEFAULT_BAND_THRESHOLDS,
     )
     monkeypatch.setattr(app_module, "_bundle", bundle)
     return TestClient(app_module.app)
@@ -121,6 +134,9 @@ def test_model_info_returns_metadata(client: TestClient) -> None:
     assert body["model_run_id"] == "stub-run-id"
     assert body["feature_count"] == 3
     assert "total_risk_score" in body["quantile_thresholds"]
+    # Band thresholds are exposed for client/auditor introspection.
+    assert body["band_thresholds"]["labels_low_to_high"] == ["E", "D", "C", "B", "A"]
+    assert body["band_thresholds"]["cut_points"] == [430.0, 460.0, 490.0, 520.0]
 
 
 # ----------------------------------------------------------------------------
@@ -175,3 +191,30 @@ def test_score_returns_503_when_bundle_missing(monkeypatch, sample_payload: dict
     client = TestClient(app_module.app)
     response = client.post("/v1/score", json=sample_payload)
     assert response.status_code == 503
+
+
+def test_band_lookup_uses_bundle_thresholds() -> None:
+    """`_band_from_score` reads cut points from the bundle, not hardcoded values.
+
+    Verifies the lookup walks ascending and uses the last label for any
+    score above the highest cut. Future regradings (5-band -> 7-band, or
+    a recalibration of the existing cuts) need only re-train and re-deploy
+    the model -- no code change in the serving layer.
+    """
+    from src.serving.app import _band_from_score
+
+    thresholds = {
+        "labels_low_to_high": ["E", "D", "C", "B", "A"],
+        "cut_points": [430.0, 460.0, 490.0, 520.0],
+    }
+    # Below the first cut -> bottom label.
+    assert _band_from_score(400.0, thresholds) == "E"
+    # On the boundary -> next label up (strict `<` in the lookup).
+    assert _band_from_score(430.0, thresholds) == "D"
+    # Mid-distribution.
+    assert _band_from_score(475.0, thresholds) == "C"
+    # Just below the top cut.
+    assert _band_from_score(519.99, thresholds) == "B"
+    # At or above the top cut -> top label.
+    assert _band_from_score(520.0, thresholds) == "A"
+    assert _band_from_score(900.0, thresholds) == "A"

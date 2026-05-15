@@ -175,6 +175,7 @@ def model_info() -> ModelInfoResponse:
         model_run_id=_bundle.model_run_id,
         feature_count=len(_bundle.feature_names),
         quantile_thresholds=_bundle.quantile_thresholds,
+        band_thresholds=_bundle.band_thresholds,
     )
 
 
@@ -183,17 +184,22 @@ def model_info() -> ModelInfoResponse:
 # ----------------------------------------------------------------------------
 
 
-def _band_from_score(score: float) -> str:
-    """Map a credit score to A-E risk bands."""
-    if score >= 700:
-        return "A"
-    if score >= 620:
-        return "B"
-    if score >= 560:
-        return "C"
-    if score >= 500:
-        return "D"
-    return "E"
+def _band_from_score(score: float, band_thresholds: dict[str, list[Any]]) -> str:
+    """Map a credit score to a risk-band label using the persisted cut points.
+
+    `band_thresholds` is the structure that travels alongside the model in
+    MLflow: ``{"labels_low_to_high": [...], "cut_points": [...]}``. There
+    are n labels and n-1 cut points; a score below cut_points[i] gets
+    label[i], scores above the highest cut get the last label. Walking
+    ascending instead of hardcoding the order means the same lookup works
+    for 5-band, 7-band, or whatever future grading the registry decides.
+    """
+    labels = band_thresholds["labels_low_to_high"]
+    cuts = band_thresholds["cut_points"]
+    for cut, label in zip(cuts, labels, strict=False):
+        if score < cut:
+            return label
+    return labels[-1]
 
 
 def _row_to_dataframe(payload: ApplicantPayload, feature_names: list[str]) -> pd.DataFrame:
@@ -242,14 +248,17 @@ def score(payload: ApplicantPayload) -> ScoreResponse:
         if _bundle.feature_names:
             engineered = engineered.reindex(columns=_bundle.feature_names, fill_value=0)
 
-        # 4. Predict probability of default
-        probas = _bundle.model.predict(engineered)
-        # mlflow.pyfunc returns a 2D ndarray for predict_proba-like outputs
-        probas_arr = np.asarray(probas)
-        if probas_arr.ndim == 2:
-            pd_value = float(probas_arr[0, 1])
-        else:
-            pd_value = float(probas_arr[0])
+        # 4. Predict probability of default.
+        #
+        # The bundle holds the raw sklearn estimator (see loader.py), so
+        # `predict_proba` is the right call -- it returns calibrated
+        # probabilities for both classes as a 2D array of shape (1, 2).
+        # Column 1 is P(class=1) = P(default). Calling `predict` instead
+        # would return the class label (0 or 1), which silently clamps to
+        # the floor/ceiling of the bounds below and looks like a wildly
+        # confident model.
+        probas_arr = np.asarray(_bundle.model.predict_proba(engineered))
+        pd_value = float(probas_arr[0, 1])
         pd_value = max(min(pd_value, 1.0 - 1e-6), 1e-6)
 
         # 5. Convert to a credit score (FICO-style scaling: 600 ± factor*log(odds))
@@ -267,7 +276,7 @@ def score(payload: ApplicantPayload) -> ScoreResponse:
         return ScoreResponse(
             probability_of_default=pd_value,
             score=score_value,
-            band=_band_from_score(score_value),
+            band=_band_from_score(score_value, _bundle.band_thresholds),
             reason_codes=[ReasonCode(**r) for r in reasons],
             model_name=_bundle.model_name,
             model_version=_bundle.model_version,

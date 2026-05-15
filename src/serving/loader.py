@@ -8,7 +8,10 @@ dataclass.
 
 Resolved at load time
 ---------------------
-1. The scorecard sklearn model (loaded via `mlflow.pyfunc.load_model`)
+1. The scorecard sklearn estimator (loaded via `mlflow.sklearn.load_model`
+   so `.predict_proba()` is available; the pyfunc flavor's `.predict()`
+   returns class labels for sklearn classifiers, which is the wrong
+   contract for a credit scoring service).
 2. The version metadata (number, run_id, registered name)
 3. The fitted QuantileFlagger thresholds (downloaded from the run's
    `feature_pipeline/` artefact directory as `thresholds.json`)
@@ -26,6 +29,7 @@ from pathlib import Path
 from typing import Any
 
 import mlflow
+import mlflow.sklearn
 from mlflow.models import get_model_info
 from mlflow.tracking import MlflowClient
 
@@ -34,6 +38,17 @@ from src.settings import settings
 SCORECARD_MODEL_NAME = "credit_scorecard"
 PRODUCTION_ALIAS = "production"
 FEATURE_PIPELINE_ARTIFACT_PATH = "feature_pipeline"
+BAND_THRESHOLDS_ARTIFACT_PATH = "band_thresholds"
+
+# Used when the registered model predates the band_thresholds.json artefact
+# (older versions, rollback to a pre-Phase F.4 model). FICO-tradition cut
+# points -- low-default-rate calibration, so they will band most applicants
+# in a high-bad-rate population as D/E. The loader warns loudly when this
+# fallback is hit.
+_DEFAULT_BAND_THRESHOLDS: dict[str, list[Any]] = {
+    "labels_low_to_high": ["E", "D", "C", "B", "A"],
+    "cut_points": [500.0, 560.0, 620.0, 700.0],
+}
 
 
 # ----------------------------------------------------------------------------
@@ -45,12 +60,13 @@ FEATURE_PIPELINE_ARTIFACT_PATH = "feature_pipeline"
 class ModelBundle:
     """Everything the serving runtime needs to score a request."""
 
-    model: Any  # sklearn model loaded via mlflow.pyfunc
+    model: Any  # raw sklearn estimator (CalibratedClassifierCV) from mlflow.sklearn
     model_name: str
     model_version: str
     model_run_id: str
     quantile_thresholds: dict[str, dict[str, float]]
     feature_names: list[str]  # columns the model expects at predict time
+    band_thresholds: dict[str, list[Any]]  # {"labels_low_to_high": [...], "cut_points": [...]}
 
 
 # ----------------------------------------------------------------------------
@@ -82,6 +98,38 @@ def _find_thresholds_json(local_artefact_dir: Path) -> dict[str, dict[str, float
     return payload.get("thresholds", {})
 
 
+def _download_band_thresholds(client: MlflowClient, run_id: str) -> dict[str, list[Any]]:
+    """Download the band_thresholds.json artefact for this run, or fall back.
+
+    Returns the persisted train-time band cut points. If the artefact is
+    absent (e.g. the registered model version predates Phase F.4), logs a
+    warning and returns the FICO-tradition defaults so the service still
+    starts. The default cut points produce a wildly miscalibrated banding
+    for a high-bad-rate population -- log volume is intentional.
+    """
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            local = client.download_artifacts(
+                run_id=run_id,
+                path=BAND_THRESHOLDS_ARTIFACT_PATH,
+                dst_path=tmpdir,
+            )
+            candidates = list(Path(local).rglob("band_thresholds.json"))
+            if not candidates:
+                print(
+                    f"[loader] WARNING: no band_thresholds.json under {local}; "
+                    "falling back to FICO defaults."
+                )
+                return dict(_DEFAULT_BAND_THRESHOLDS)
+            return json.loads(candidates[0].read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001 - artefact may simply not exist
+        print(
+            f"[loader] WARNING: could not download band_thresholds artefact "
+            f"({exc.__class__.__name__}: {exc}); falling back to FICO defaults."
+        )
+        return dict(_DEFAULT_BAND_THRESHOLDS)
+
+
 def load_bundle(
     tracking_uri: str | None = None,
     model_name: str = SCORECARD_MODEL_NAME,
@@ -108,8 +156,12 @@ def load_bundle(
     version_info = client.get_model_version_by_alias(name=model_name, alias=alias)
     run_id = version_info.run_id
 
-    # Load the sklearn model itself.
-    model = mlflow.pyfunc.load_model(model_uri)
+    # Load the raw sklearn estimator (not the pyfunc wrapper) so the
+    # serving layer can call `.predict_proba(...)` directly. The pyfunc
+    # wrapper's `.predict()` returns class labels for sklearn classifiers,
+    # which would silently produce 0/1 outputs that get clamped instead
+    # of real probabilities.
+    model = mlflow.sklearn.load_model(model_uri)
     print(f"[loader] loaded model {model_name}@{alias} (version {version_info.version})")
 
     # Pull the fitted feature pipeline down to a tmp dir, find thresholds.json.
@@ -122,44 +174,35 @@ def load_bundle(
         quantile_thresholds = _find_thresholds_json(Path(local))
     print(f"[loader] loaded quantile thresholds for {len(quantile_thresholds)} columns")
 
-    # Resolve the model's input feature schema. Source-of-truth is the
+    # Resolve the model's input feature schema. Primary source is the
     # MLflow model signature logged via `infer_signature(...)` at training
-    # time. Walking the pyfunc wrapper is brittle across mlflow versions
-    # (the attribute path changes between sklearn-flavor and python-model
-    # flavor), but the signature is part of the registered model contract.
+    # time -- the signature is part of the registered model contract and
+    # is the auditable record of what the model expects. Fall back to the
+    # estimator's `feature_names_in_` attribute (set by sklearn during
+    # `.fit()`) if the signature is unavailable for any reason.
     feature_names: list[str] = []
     try:
         info = get_model_info(model_uri)
         if info.signature is not None and info.signature.inputs is not None:
-            # Schema.input_names() returns the list of column names in order.
             feature_names = [n for n in info.signature.inputs.input_names() if n]
     except Exception as exc:  # noqa: BLE001 - log and fall back
         print(f"[loader] WARNING: could not read model signature: {exc}")
 
-    # Fallback: try to reach the underlying sklearn estimator for its
-    # feature_names_in_ attribute. Path differs across mlflow versions.
     if not feature_names:
-        for attr_path in (
-            ("_model_impl", "sklearn_model"),
-            ("_model_impl", "model"),
-            ("_model_impl", "python_model"),
-        ):
-            try:
-                obj: Any = model
-                for attr in attr_path:
-                    obj = getattr(obj, attr)
-                names = getattr(obj, "feature_names_in_", None)
-                if names is not None and len(names) > 0:
-                    feature_names = list(names)
-                    break
-            except AttributeError:
-                continue
+        names = getattr(model, "feature_names_in_", None)
+        if names is not None and len(names) > 0:
+            feature_names = list(names)
 
     if not feature_names:
         print(
             "[loader] WARNING: feature_names could not be resolved from signature "
-            "or underlying estimator; scoring will pass payloads through unchanged."
+            "or estimator; scoring will pass payloads through unchanged."
         )
+
+    # Band cut points. Falls back to FICO defaults if the registered
+    # model predates the persisted artefact.
+    band_thresholds = _download_band_thresholds(client, run_id)
+    print(f"[loader] loaded band cut points: {band_thresholds['cut_points']}")
 
     return ModelBundle(
         model=model,
@@ -168,4 +211,5 @@ def load_bundle(
         model_run_id=run_id,
         quantile_thresholds=quantile_thresholds,
         feature_names=feature_names,
+        band_thresholds=band_thresholds,
     )

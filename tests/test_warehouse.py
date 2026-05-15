@@ -25,7 +25,14 @@ def temp_warehouse(tmp_path, monkeypatch):
 
 
 def _make_sample_frame(n: int = 50_000) -> pd.DataFrame:
-    """Tiny synthetic frame shaped like the real application table."""
+    """Tiny synthetic frame shaped like the real application table.
+
+    DRA dimensions are drawn from a uniform distribution over [0, 100] to
+    match the contract's expected range (a percentile-style 0-100 score).
+    Sampling from `rng.normal(0, 1, ...)` puts roughly half the values
+    below zero, which the data contract correctly rejects -- the fixture
+    has to mirror the production data shape, not a generic normal.
+    """
     import numpy as np
 
     rng = np.random.default_rng(0)
@@ -33,10 +40,10 @@ def _make_sample_frame(n: int = 50_000) -> pd.DataFrame:
         {
             "dummy_id": range(n),
             "bad": rng.choice([0, 1], size=n, p=[0.76, 0.24]),
-            "dim_judgement": rng.normal(0, 1, n),
-            "dim_core_traits": rng.normal(0, 1, n),
-            "dim_emotional_understanding": rng.normal(0, 1, n),
-            "dim_principles": rng.normal(0, 1, n),
+            "dim_judgement": rng.uniform(0, 100, n),
+            "dim_core_traits": rng.uniform(0, 100, n),
+            "dim_emotional_understanding": rng.uniform(0, 100, n),
+            "dim_principles": rng.uniform(0, 100, n),
             "num_accounts_assess": rng.integers(0, 10, n),
             "product_type": rng.choice(["A", "B", "C"], size=n),
         }

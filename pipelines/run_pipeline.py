@@ -135,7 +135,10 @@ def run_pipeline(path=None):
     # ---------------------------------------------
     # SCORECARD
     # ---------------------------------------------
-    model, scores_df, summary = train_scorecard_model(X_train, y_train, X_test, y_test)
+    # Band cut points are persisted via the MLflow-tracked entry point
+    # (src.training.train); this legacy pipeline writes nothing to MLflow,
+    # so the cuts are intentionally discarded here.
+    model, scores_df, summary, _band_cuts = train_scorecard_model(X_train, y_train, X_test, y_test)
 
     # ---------------------------------------------
     # RF BENCHMARK

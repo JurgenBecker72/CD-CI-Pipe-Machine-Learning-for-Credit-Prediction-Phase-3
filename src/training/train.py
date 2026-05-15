@@ -32,8 +32,10 @@ Browse to http://localhost:5000 to see the run.
 
 from __future__ import annotations
 
+import json
 import platform
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -311,7 +313,9 @@ def train_with_tracking(
 
         # ---- Train + log scorecard -----------------------------------
         print("\n===== TRAINING SCORECARD =====")
-        scorecard, scores_df, summary = train_scorecard_model(X_train, y_train, X_test, y_test)
+        scorecard, scores_df, summary, band_cut_points = train_scorecard_model(
+            X_train, y_train, X_test, y_test
+        )
 
         # The scorecard fits on a subset of numeric features; pull that
         # subset off the fitted estimator so subsequent prediction calls
@@ -338,6 +342,25 @@ def train_with_tracking(
             signature=scorecard_signature,
             input_example=scorecard_example,
         )
+
+        # ---- Persist + log band cut points ---------------------------
+        # The serving layer maps each score to an A-E band using the
+        # train-time quintile cuts -- not hardcoded FICO thresholds,
+        # which are calibrated for a very different population bad
+        # rate. Logging the cuts as an artefact alongside the model
+        # is what guarantees train-time and serve-time agree on what
+        # "band C" means.
+        band_thresholds_payload = {
+            "labels_low_to_high": ["E", "D", "C", "B", "A"],
+            "cut_points": band_cut_points,
+        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            band_thresholds_file = Path(tmpdir) / "band_thresholds.json"
+            band_thresholds_file.write_text(
+                json.dumps(band_thresholds_payload, indent=2), encoding="utf-8"
+            )
+            mlflow.log_artifact(str(band_thresholds_file), artifact_path="band_thresholds")
+        print(f"  Logged band cut points: {band_cut_points}")
 
         # ---- Train + log RF challenger -------------------------------
         print("\n===== TRAINING RF CHALLENGER =====")

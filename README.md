@@ -111,6 +111,8 @@ Phase F packages the registered model behind an HTTP service. A FastAPI applicat
 
 **Reason codes.** `src/serving/reason_codes.py` returns the top-three feature contributions per request and labels each `increases_risk` or `decreases_risk`. This is the customer-facing explanation channel that adjudicators and regulators consume.
 
+**Band thresholds.** The mapping from credit score to A–E band is *learned* at training time and persisted as an MLflow artefact. Training uses `pd.qcut(scores, 5)` to compute quintile cut points over the training population; those four cut points are logged as `band_thresholds.json` alongside the model. The serving loader downloads the artefact at startup; `_band_from_score` walks it instead of using hardcoded FICO-tradition thresholds. This closes a train/serve skew: hardcoded FICO cuts (700/620/560/500) are calibrated for low-bad-rate populations and would band most applicants in a 24% bad-rate population as D/E regardless of their model output. When a registered model predates the artefact, the loader falls back to FICO defaults with a loud warning rather than refusing to start.
+
 **Run the service locally:**
 
 ```powershell
@@ -126,10 +128,32 @@ Wait for `Application startup complete` and `[loader] loaded model credit_scorec
 **Smoke-test the full surface:**
 
 ```powershell
+# Generate a realistic applicant payload from the warehouse (one-off; re-run
+# when BASE_FEATURES or the marts schema changes).
+uv run python scripts/refresh_smoke_payload.py
+
+# Hit every endpoint and write the trail to scripts/smoke_score.log.
 .\scripts\smoke_score.ps1
 ```
 
-The script hits every endpoint in order and writes the full request/response trail to `scripts/smoke_score.log`. A healthy run shows 200 from every endpoint and a non-zero `feature_count` in the `/model_info` response.
+The fixture in `scripts/smoke_payload.json` is generated from a real, complete
+non-defaulter row in `staging.application` so the model receives the same shape
+of input it was trained on. A healthy run shows 200 from every endpoint, a
+non-zero `feature_count` in the `/model_info` response, and a probability of
+default in the same neighbourhood as the population bad rate (~0.24).
+
+**Bypass the API for direct model introspection.** When the smoke surfaces an
+unexpected score, run the probe to isolate whether the issue is in the model
+itself or in the request path:
+
+```powershell
+uv run python scripts/probe_model.py
+```
+
+This loads the production bundle, runs the smoke payload through the same
+feature engineering and reindex the API uses, then prints the raw
+`predict_proba` output alongside every value the model sees. Used during
+Phase F to confirm a serving-layer `predict` vs `predict_proba` bug.
 
 **Tests.** `tests/test_scoring_api.py` covers nine contract scenarios: schema strictness (extra fields rejected), missing-required-field rejection, type-coercion edges, readiness gating, `/model_info` shape, score response shape, reason-code count, idempotency on identical payloads, and the Prometheus metrics surface. All run against a stub model so the suite stays fast and offline.
 
@@ -440,7 +464,10 @@ Machine-Learning-For-Credit-Prediction-Phase-3/
 │   ├── docker-run.ps1             # Run the full pipeline inside a container (Phase B)
 │   ├── smoke_quantile_flagger.py  # Local Spark + QuantileFlagger sanity check (Phase E)
 │   ├── diagnose_spark.py          # 7-stage Spark environment diagnostic (Phase E)
-│   └── smoke_score.ps1            # End-to-end smoke test for the scoring API (Phase F)
+│   ├── smoke_score.ps1            # End-to-end smoke test for the scoring API (Phase F)
+│   ├── refresh_smoke_payload.py   # Regenerate the realistic smoke fixture (Phase F)
+│   ├── smoke_payload.json         # Committed fixture loaded by smoke_score.ps1 (Phase F)
+│   └── probe_model.py             # Direct model invocation, bypasses the API (Phase F)
 ├── src/
 │   ├── config.py                  # Static project knowledge — target, IDs, leakage, feature groups
 │   ├── paths.py                   # Anchored path resolution

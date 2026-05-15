@@ -159,3 +159,12 @@ class ModelInfoResponse(BaseModel):
     model_run_id: str
     feature_count: int
     quantile_thresholds: dict[str, dict[str, float]]
+    band_thresholds: dict[str, list] = Field(
+        description=(
+            "Persisted train-time band cut points. Keys: 'labels_low_to_high' "
+            "(ordered band names, e.g. ['E','D','C','B','A']) and 'cut_points' "
+            "(n-1 score thresholds separating the n bands). A score is mapped "
+            "to label[i] when it is below cut_points[i]; the last label catches "
+            "everything above the highest cut."
+        ),
+    )
