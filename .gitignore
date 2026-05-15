@@ -88,5 +88,11 @@ Claude fix OpenAI code/
 *.log
 logs/
 
+# ---------- Editor / hot-reload temp files ----------
+# uvicorn --reload sometimes leaves <file>.tmp.<pid>.<hash> droppings if the
+# worker is killed uncleanly. Generic .tmp.* catches those plus any other
+# tool that writes atomic-rename staging files.
+*.tmp.*
+
 # Cowork / Claude session artifacts
 Claude/

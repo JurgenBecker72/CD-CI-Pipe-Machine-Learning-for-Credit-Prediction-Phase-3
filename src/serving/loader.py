@@ -41,9 +41,9 @@ FEATURE_PIPELINE_ARTIFACT_PATH = "feature_pipeline"
 BAND_THRESHOLDS_ARTIFACT_PATH = "band_thresholds"
 
 # Used when the registered model predates the band_thresholds.json artefact
-# (older versions, rollback to a pre-Phase F.4 model). FICO-tradition cut
-# points -- low-default-rate calibration, so they will band most applicants
-# in a high-bad-rate population as D/E. The loader warns loudly when this
+# (older versions, rollback to an earlier model). FICO-tradition cut points
+# -- low-default-rate calibration, so they will band most applicants in a
+# high-bad-rate population as D/E. The loader warns loudly when this
 # fallback is hit.
 _DEFAULT_BAND_THRESHOLDS: dict[str, list[Any]] = {
     "labels_low_to_high": ["E", "D", "C", "B", "A"],
@@ -102,10 +102,11 @@ def _download_band_thresholds(client: MlflowClient, run_id: str) -> dict[str, li
     """Download the band_thresholds.json artefact for this run, or fall back.
 
     Returns the persisted train-time band cut points. If the artefact is
-    absent (e.g. the registered model version predates Phase F.4), logs a
-    warning and returns the FICO-tradition defaults so the service still
-    starts. The default cut points produce a wildly miscalibrated banding
-    for a high-bad-rate population -- log volume is intentional.
+    absent (e.g. the registered model version was logged before the band
+    thresholds sidecar contract was introduced), logs a warning and returns
+    the FICO-tradition defaults so the service still starts. The default
+    cut points produce a wildly miscalibrated banding for a high-bad-rate
+    population -- log volume is intentional.
     """
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
