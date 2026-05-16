@@ -162,6 +162,16 @@ def test_score_returns_expected_shape(client: TestClient, sample_payload: dict) 
         assert {"feature", "contribution", "direction"} <= set(reason.keys())
         assert reason["direction"] in {"increases_risk", "decreases_risk"}
 
+    # At least one reason code must carry a non-zero contribution. If
+    # every value is zero the contribution path has silently degenerated
+    # (the classic case: SHAP's LinearExplainer being called with the
+    # input row as its own background, which subtracts to zero). Guards
+    # against the F.5 regression.
+    assert any(reason["contribution"] != 0.0 for reason in body["reason_codes"]), (
+        "all reason-code contributions are zero -- contribution path "
+        "is degenerate; check _compute_contributions in reason_codes.py"
+    )
+
     # Audit fields
     assert body["model_name"] == "credit_scorecard"
     assert body["model_version"] == "1"

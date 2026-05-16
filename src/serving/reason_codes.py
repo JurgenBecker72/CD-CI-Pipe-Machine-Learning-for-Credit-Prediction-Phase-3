@@ -1,20 +1,30 @@
-"""SHAP-based reason codes for individual scoring requests.
+"""Reason codes for individual scoring requests.
 
-Returns the top N features contributing to the decision, in the format
+Returns the top-N features contributing to the prediction, in the format
 the FCRA adverse-action notice requires (per US Fair Credit Reporting
 Act) -- a small set of named factors with their direction of impact.
 
-Implementation notes
---------------------
-The scorecard is a CalibratedClassifierCV wrapping a LogisticRegression.
-SHAP's LinearExplainer is the right tool: it gives exact SHAP values for
-linear models in milliseconds rather than minutes. The TreeExplainer
-path used for the RF challenger is much slower per request and isn't
-needed when the production model is linear.
+Why coefficient-based (not SHAP)
+--------------------------------
+The production scorecard is a CalibratedClassifierCV wrapping a
+LogisticRegression. For a linear model the per-feature contribution to
+the log-odds prediction is exactly ``coef_i * x_i`` -- no closed-form
+surprise, no non-linear interaction effects to recover. The sigmoid
+calibration on top scales every contribution by the same learned
+constant; direction and relative ranking are preserved, which is all
+the reason-codes consumer needs (FCRA wants the top factors and the
+direction of each, not absolute log-odds magnitudes).
 
-If SHAP isn't available at runtime (e.g. a stripped serving image),
-fall back to coefficient-weight reason codes -- not as theoretically
-clean but operationally equivalent for linear models.
+SHAP's ``LinearExplainer`` would compute the same ``coef_i * x_i``
+(modulo a baseline subtraction) at the cost of an extra dependency and
+a heavier per-request runtime. The ``shap`` library does stay in the
+training pipeline (``src/training/train.py``) where ``TreeExplainer``
+produces non-trivial attributions for the RF challenger model.
+
+If the production model class ever changes to a non-linear estimator
+(XGBoost, RF, calibrated neural net), this module has to be rewritten
+to use the explainer appropriate for the new flavour -- the
+coefficient trick only works for linear models.
 """
 
 from __future__ import annotations
@@ -37,8 +47,9 @@ def compute_reason_codes(
     Parameters
     ----------
     model
-        The loaded sklearn model. Expected to have predict_proba and
-        coef_ (LogisticRegression) or feature_names_in_.
+        The loaded sklearn classifier. Either a linear estimator
+        exposing ``coef_`` directly, or a ``CalibratedClassifierCV``
+        wrapping one (production case).
     row
         One-row pandas DataFrame containing the model's input features.
     top_n
@@ -54,12 +65,11 @@ def compute_reason_codes(
 
     contributions = _compute_contributions(model, row)
 
-    # Build a sorted dataframe of (feature, contribution).
     feature_names = list(row.columns)
     if len(contributions) != len(feature_names):
-        # The model's internal feature list may differ from the input row
-        # (column ordering, dummy encoding, etc.). Truncate to the shorter
-        # of the two to avoid misalignment.
+        # The estimator's feature list and the input row may not align
+        # one-to-one (drop_first dummy encoding, etc.). Truncate to the
+        # shorter so the zip below doesn't mislabel reason codes.
         n = min(len(contributions), len(feature_names))
         contributions = contributions[:n]
         feature_names = feature_names[:n]
@@ -81,47 +91,23 @@ def compute_reason_codes(
 
 
 def _compute_contributions(model: Any, row: pd.DataFrame) -> np.ndarray:
-    """Compute per-feature contributions to the predicted probability.
+    """Per-feature contributions: ``coef_i * x_i``.
 
-    Strategy ordering:
-    1. SHAP LinearExplainer if SHAP is installed and the underlying
-       estimator is a calibrated linear model.
-    2. Coefficient-weight fallback: feature_value * coef_, which is the
-       exact SHAP value for an uncalibrated logistic regression and a
-       reasonable approximation for the calibrated version.
-    """
-    try:
-        return _shap_linear_contributions(model, row)
-    except Exception as exc:  # noqa: BLE001 - fall through to coef fallback
-        print(f"[reason_codes] SHAP path failed ({type(exc).__name__}: {exc}); using coef fallback")
-        return _coef_contributions(model, row)
-
-
-def _shap_linear_contributions(model: Any, row: pd.DataFrame) -> np.ndarray:
-    """SHAP values via LinearExplainer. Raises if SHAP is unavailable."""
-    import shap  # local import so the serving image can omit shap if desired
-
-    # The CalibratedClassifierCV holds the underlying linear model in
-    # estimator.calibrated_classifiers_[0].estimator on newer sklearn.
-    underlying = _extract_linear_estimator(model)
-    explainer = shap.LinearExplainer(underlying, row)
-    values = explainer.shap_values(row)
-    # LinearExplainer returns a (1, n_features) array for one row.
-    return np.asarray(values).reshape(-1)
-
-
-def _coef_contributions(model: Any, row: pd.DataFrame) -> np.ndarray:
-    """Fallback: contribution = feature_value * coefficient.
-
-    Exact SHAP value for an uncalibrated linear model, and a good
-    approximation for a calibrated wrapper (calibration adjusts the
-    intercept and scale but not the per-feature directionality).
+    Exact SHAP value for an uncalibrated logistic regression with an
+    origin baseline. For the sigmoid-calibrated wrapper the result
+    differs from a strict SHAP attribution only by a uniform scalar
+    learned by the calibrator -- enough to preserve the ranking and
+    direction the reason-codes consumer reads.
     """
     underlying = _extract_linear_estimator(model)
     coefs = np.asarray(underlying.coef_).reshape(-1)
     values = np.asarray(row.iloc[0].values, dtype=float).reshape(-1)
 
     if len(coefs) != len(values):
+        # Some features in the row may not appear in the model's coef_
+        # vector (e.g. categoricals that got drop_first-encoded at
+        # train time). Truncate both to the shorter so the element-wise
+        # multiply is safe.
         n = min(len(coefs), len(values))
         coefs = coefs[:n]
         values = values[:n]
@@ -130,16 +116,14 @@ def _coef_contributions(model: Any, row: pd.DataFrame) -> np.ndarray:
 
 
 def _extract_linear_estimator(model: Any) -> Any:
-    """Walk through pyfunc / calibrated wrappers to the underlying linear model."""
-    candidate = model
-    # mlflow.pyfunc wraps the actual sklearn estimator
-    if hasattr(candidate, "_model_impl"):
-        candidate = candidate._model_impl  # type: ignore[attr-defined]
-    if hasattr(candidate, "sklearn_model"):
-        candidate = candidate.sklearn_model  # type: ignore[attr-defined]
-    if hasattr(candidate, "python_model"):
-        candidate = candidate.python_model  # type: ignore[attr-defined]
-    # CalibratedClassifierCV -> first calibrated classifier -> base estimator
-    if hasattr(candidate, "calibrated_classifiers_"):
-        candidate = candidate.calibrated_classifiers_[0].estimator
-    return candidate
+    """Unwrap a CalibratedClassifierCV to its underlying linear estimator.
+
+    The production loader returns a raw sklearn classifier. A
+    ``CalibratedClassifierCV`` exposes the fitted base estimator at
+    ``calibrated_classifiers_[0].estimator`` on sklearn 1.4+. If the
+    object already exposes ``coef_`` directly (a bare ``LogisticRegression``
+    in tests, for example), the function is a no-op.
+    """
+    if hasattr(model, "calibrated_classifiers_"):
+        return model.calibrated_classifiers_[0].estimator
+    return model
