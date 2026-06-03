@@ -1,0 +1,47 @@
+# docker-compose.yml
+# -----------------------------------------------------------------------------
+# Local services that the credit pipeline depends on. Currently the MLflow
+# tracking server. Additional services (Prometheus, Grafana) can be added
+# alongside without changing the bring-up workflow.
+#
+# Bring up the stack:    docker compose up -d
+# Tear down:             docker compose down
+# Logs:                  docker compose logs -f mlflow
+# Reset state (DANGER):  docker compose down -v   # removes mlflow-data volume
+# -----------------------------------------------------------------------------
+
+services:
+  # ----- MLflow tracking server --------------------------------------------
+  # Stores run metadata in SQLite (a single file inside mlflow-data/) and
+  # artefacts (pickled models, plots, etc.) as files in mlflow-data/artefacts/.
+  # SQLite is fine for single-developer use; production swaps to Postgres.
+  mlflow:
+    # Pinned tag — bump deliberately, not by accident. Known-good as of 2026-05.
+    # Verify available tags at https://github.com/mlflow/mlflow/pkgs/container/mlflow
+    image: ghcr.io/mlflow/mlflow:v2.18.0
+    container_name: credit-mlflow
+    command: >
+      mlflow server
+      --host 0.0.0.0
+      --port 5000
+      --backend-store-uri sqlite:////mlflow/mlflow.db
+      --artifacts-destination /mlflow/artefacts
+      --default-artifact-root mlflow-artifacts:/
+      --serve-artifacts
+    ports:
+      - "5000:5000"        # browse to http://localhost:5000
+    volumes:
+      - mlflow-data:/mlflow
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+# Named volume so MLflow state survives `docker compose down`.
+# `docker compose down -v` will wipe it - use only when intentional.
+volumes:
+  mlflow-data:
+    name: credit-mlflow-data

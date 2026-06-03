@@ -17,6 +17,20 @@ dist/
 venv/
 env/
 ENV/
+# Locked-folder leftovers from venv rebuilds (Windows file-handle issues)
+*-old-locked/
+
+# ---------- uv ----------
+# uv.lock IS committed (reproducibility) — do not ignore it.
+# These are uv's caches/scratch files and should not be tracked.
+.uv-cache/
+uv-receipt.json
+
+# ---------- Local services data ----------
+warehouse/
+mlflow-data
+mlflow-data/
+.docker-compose-state/
 
 # ---------- IDE / OS ----------
 .vscode/
@@ -25,6 +39,8 @@ ENV/
 *.swo
 .DS_Store
 Thumbs.db
+# Microsoft Office lock files (created when a doc is open in Word/Excel/PowerPoint)
+~$*
 
 # ---------- Secrets ----------
 .env
@@ -65,11 +81,18 @@ archive/**/reports/*.pdf
 review_report.docx
 review_report.js
 WJARR-2025-2266.pdf
+**/WJARR-2025-2266.pdf
 Claude fix OpenAI code/
 
 # ---------- Logs ----------
 *.log
 logs/
+
+# ---------- Editor / hot-reload temp files ----------
+# uvicorn --reload sometimes leaves <file>.tmp.<pid>.<hash> droppings if the
+# worker is killed uncleanly. Generic .tmp.* catches those plus any other
+# tool that writes atomic-rename staging files.
+*.tmp.*
 
 # Cowork / Claude session artifacts
 Claude/

@@ -1,0 +1,62 @@
+# Pre-commit hooks for the credit pipeline.
+#
+# One-time setup (after `uv sync --group dev`):
+#     uv run pre-commit install
+#
+# These hooks run on `git commit` and block commits that fail any check.
+# Versions mirror the ones declared in pyproject.toml so local checks and
+# CI stay in lockstep.
+#
+# To run all hooks against every file once (e.g. on initial setup):
+#     uv run pre-commit run --all-files
+
+repos:
+  # Generic hygiene hooks — fast, low-risk, high-value.
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        # Allow multi-document YAML (k8s manifests in later phases).
+        args: [--allow-multiple-documents]
+      - id: check-toml
+      - id: check-json
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+  # Ruff: lint + autofix. Runs first so black sees fewer issues.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+
+  # Black: formatter. We don't pin language_version here — on Windows the
+  # virtualenv library can't find uv-managed Pythons by `python3.11` name.
+  # Black runs with whatever Python the hook venv inherits; since the
+  # repo declares requires-python>=3.11 and we never use 3.10 syntax, this
+  # is functionally equivalent and avoids the bootstrap failure.
+  - repo: https://github.com/psf/black
+    rev: 24.10.0
+    hooks:
+      - id: black
+
+# Files we never want to lint or format. Mirrors pyproject.toml exclusions.
+exclude: |
+  (?x)^(
+      archive/.*|
+      data/.*|
+      models/.*|
+      reports/.*|
+      warehouse/.*|
+      mlflow-data/.*|
+      \.venv/.*|
+      .*\.docx$|
+      .*\.pdf$|
+      .*\.xlsx$
+  )$

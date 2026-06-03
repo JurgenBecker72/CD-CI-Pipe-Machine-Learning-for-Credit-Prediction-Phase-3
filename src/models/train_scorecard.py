@@ -60,9 +60,21 @@ def train_scorecard_model(X_train, y_train, X_test, y_test):
 
     df_scores = pd.DataFrame({"pd": probs, "score": scores, "target": y_test.values})
 
-    df_scores["band"] = pd.qcut(
-        df_scores["score"], 5, labels=["E", "D", "C", "B", "A"], duplicates="drop"
+    # Compute bands AND capture the cut points pandas used. The cut points
+    # are the train-time decision that maps a raw score to an A-E band; they
+    # must be persisted alongside the model so the serving layer can perform
+    # the same mapping at scoring time. pd.qcut returns bin_edges of length
+    # n_bins + 1 (the leftmost and rightmost are the data min/max); the
+    # interior n_bins - 1 entries are the actual thresholds between bands.
+    bands, bin_edges = pd.qcut(
+        df_scores["score"],
+        5,
+        labels=["E", "D", "C", "B", "A"],
+        duplicates="drop",
+        retbins=True,
     )
+    df_scores["band"] = bands
+    band_cut_points = [float(x) for x in bin_edges[1:-1]]
 
     summary = df_scores.groupby("band", observed=False).agg(
         count=("target", "count"),
@@ -74,4 +86,4 @@ def train_scorecard_model(X_train, y_train, X_test, y_test):
     print("\n===== SCORE BAND SUMMARY =====")
     print(summary)
 
-    return model, df_scores, summary
+    return model, df_scores, summary, band_cut_points
