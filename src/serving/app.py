@@ -238,15 +238,33 @@ def score(payload: ApplicantPayload) -> ScoreResponse:
     start = time.perf_counter()
 
     try:
-        # 1. Pydantic payload -> one-row DataFrame
-        raw_df = pd.DataFrame([payload.model_dump()]).fillna(0)
+        # 1. Pydantic payload -> one-row DataFrame. NaNs from optional
+        # fields are deliberately preserved through feature engineering
+        # so the median fill in step 3.5 below sees them and applies
+        # the same statistic the model was trained against.
+        raw_df = pd.DataFrame([payload.model_dump()])
 
-        # 2. Apply scoring-time feature engineering (row-wise + quantile flags)
+        # 2. Apply scoring-time feature engineering (row-wise + quantile flags).
+        # NaN sources propagate to NaN engineered values; quantile flag
+        # comparisons against NaN return False, yielding a 0 flag (the
+        # conservative default for "we don't know if this row clears
+        # the threshold").
         engineered = engineer_features(raw_df, _bundle.quantile_thresholds)
 
-        # 3. Reindex to the model's expected feature schema
+        # 3. Reindex to the model's expected feature schema. Any column
+        # the model expects that the engineering step didn't produce is
+        # introduced as NaN -- the next step fills it.
         if _bundle.feature_names:
-            engineered = engineered.reindex(columns=_bundle.feature_names, fill_value=0)
+            engineered = engineered.reindex(columns=_bundle.feature_names)
+
+        # 3.5. Fill NaN with the training-time per-column medians the
+        # model was fit against. Falls back to zero per column when a
+        # median is not recorded (e.g. older registered models without
+        # the medians sidecar). Closes the train/serve skew that the
+        # earlier `fillna(0)` introduced for features centred far from
+        # zero (DRA dimensions on a 0-100 scale, for example).
+        fill_map = {col: _bundle.medians.get(col, 0.0) for col in engineered.columns}
+        engineered = engineered.fillna(value=fill_map)
 
         # 4. Predict probability of default.
         #

@@ -116,8 +116,14 @@ def _drop_ids_and_leakage(df: pd.DataFrame) -> pd.DataFrame:
 
 def _impute_train_test(
     X_train: pd.DataFrame, X_test: pd.DataFrame
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Median impute on train only - prevents test-set leakage into imputation."""
+) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, float]]:
+    """Median impute on train only - prevents test-set leakage into imputation.
+
+    Returns the imputed frames plus the per-column medians dict. The
+    medians are persisted alongside the model so the serving layer can
+    apply the same fill at scoring time instead of defaulting to zero,
+    closing the train/serve skew on sparse payloads.
+    """
     X_train = X_train.copy()
     X_test = X_test.copy()
     numeric_cols = X_train.select_dtypes(include=[np.number]).columns
@@ -126,7 +132,9 @@ def _impute_train_test(
         X_train[col] = X_train[col].fillna(medians[col])
         if col in X_test.columns:
             X_test[col] = X_test[col].fillna(medians[col])
-    return X_train, X_test
+    # Native-type conversion so the dict serialises cleanly to JSON.
+    medians_dict = {str(col): float(medians[col]) for col in numeric_cols}
+    return X_train, X_test, medians_dict
 
 
 def _start_spark():
@@ -269,7 +277,7 @@ def train_with_tracking(
     X_test = test_pdf.drop(columns=[TARGET])
     y_test = test_pdf[TARGET]
 
-    X_train, X_test = _impute_train_test(X_train, X_test)
+    X_train, X_test, train_medians = _impute_train_test(X_train, X_test)
 
     # ------------------------------------------------------------------
     # Begin the MLflow run
@@ -361,6 +369,20 @@ def train_with_tracking(
             )
             mlflow.log_artifact(str(band_thresholds_file), artifact_path="band_thresholds")
         print(f"  Logged band cut points: {band_cut_points}")
+
+        # ---- Persist + log per-feature training medians --------------
+        # Logged so the serving layer can fill missing payload values
+        # with the same statistic the model was trained against, instead
+        # of defaulting to zero -- which is wildly out-of-distribution
+        # for features centred far from zero (DRA dimensions on a 0-100
+        # scale, for example).
+        with tempfile.TemporaryDirectory() as tmpdir:
+            medians_file = Path(tmpdir) / "medians.json"
+            medians_file.write_text(
+                json.dumps(train_medians, indent=2, sort_keys=True), encoding="utf-8"
+            )
+            mlflow.log_artifact(str(medians_file), artifact_path="medians")
+        print(f"  Logged training medians for {len(train_medians)} columns")
 
         # ---- Train + log RF challenger -------------------------------
         print("\n===== TRAINING RF CHALLENGER =====")

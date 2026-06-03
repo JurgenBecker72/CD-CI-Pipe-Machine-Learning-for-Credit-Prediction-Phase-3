@@ -65,6 +65,10 @@ def client(monkeypatch) -> TestClient:
         },
         feature_names=["total_risk_score", "risk_drivers", "risk_mitigators"],
         band_thresholds=_DEFAULT_BAND_THRESHOLDS,
+        # Empty medians: exercises the loader's fallback path where the
+        # registered model predates the sidecar artefact. Sparse-payload
+        # behaviour matches the pre-F.2 fillna(0) semantics in that case.
+        medians={},
     )
     monkeypatch.setattr(app_module, "_bundle", bundle)
     return TestClient(app_module.app)

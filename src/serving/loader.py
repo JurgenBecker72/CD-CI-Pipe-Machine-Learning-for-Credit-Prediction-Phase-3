@@ -39,6 +39,7 @@ SCORECARD_MODEL_NAME = "credit_scorecard"
 PRODUCTION_ALIAS = "production"
 FEATURE_PIPELINE_ARTIFACT_PATH = "feature_pipeline"
 BAND_THRESHOLDS_ARTIFACT_PATH = "band_thresholds"
+MEDIANS_ARTIFACT_PATH = "medians"
 
 # Used when the registered model predates the band_thresholds.json artefact
 # (older versions, rollback to an earlier model). FICO-tradition cut points
@@ -67,6 +68,7 @@ class ModelBundle:
     quantile_thresholds: dict[str, dict[str, float]]
     feature_names: list[str]  # columns the model expects at predict time
     band_thresholds: dict[str, list[Any]]  # {"labels_low_to_high": [...], "cut_points": [...]}
+    medians: dict[str, float]  # per-column training medians; empty dict if absent
 
 
 # ----------------------------------------------------------------------------
@@ -96,6 +98,41 @@ def _find_thresholds_json(local_artefact_dir: Path) -> dict[str, dict[str, float
         payload = json.load(f)
 
     return payload.get("thresholds", {})
+
+
+def _download_medians(client: MlflowClient, run_id: str) -> dict[str, float]:
+    """Download the medians.json artefact for this run, or fall back.
+
+    Returns the per-column training medians used to fill missing values
+    at scoring time. If the artefact is absent (e.g. the registered
+    model version was logged before the medians sidecar contract was
+    introduced), logs a warning and returns an empty dict; the serving
+    layer interprets that as "fill missing payload values with zero",
+    which is the original behaviour and preserves backward compatibility.
+    """
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            local = client.download_artifacts(
+                run_id=run_id,
+                path=MEDIANS_ARTIFACT_PATH,
+                dst_path=tmpdir,
+            )
+            candidates = list(Path(local).rglob("medians.json"))
+            if not candidates:
+                print(
+                    f"[loader] WARNING: no medians.json under {local}; "
+                    "serving will fillna(0) for missing payload values."
+                )
+                return {}
+            payload = json.loads(candidates[0].read_text(encoding="utf-8"))
+            # Make sure values are native Python floats.
+            return {str(k): float(v) for k, v in payload.items()}
+    except Exception as exc:  # noqa: BLE001 - artefact may simply not exist
+        print(
+            f"[loader] WARNING: could not download medians artefact "
+            f"({exc.__class__.__name__}: {exc}); serving will fillna(0)."
+        )
+        return {}
 
 
 def _download_band_thresholds(client: MlflowClient, run_id: str) -> dict[str, list[Any]]:
@@ -205,6 +242,12 @@ def load_bundle(
     band_thresholds = _download_band_thresholds(client, run_id)
     print(f"[loader] loaded band cut points: {band_thresholds['cut_points']}")
 
+    # Per-feature training medians. Falls back to an empty dict if the
+    # registered model predates the artefact; serving fillna defaults to
+    # zero in that case (the previous behaviour).
+    medians = _download_medians(client, run_id)
+    print(f"[loader] loaded training medians for {len(medians)} columns")
+
     return ModelBundle(
         model=model,
         model_name=model_name,
@@ -213,4 +256,5 @@ def load_bundle(
         quantile_thresholds=quantile_thresholds,
         feature_names=feature_names,
         band_thresholds=band_thresholds,
+        medians=medians,
     )
