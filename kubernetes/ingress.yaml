@@ -1,0 +1,59 @@
+# kubernetes/ingress.yaml
+# -----------------------------------------------------------------------------
+# External HTTP entry point for the credit scoring API. The nginx ingress
+# controller (installed via `minikube addons enable ingress`) watches for
+# Ingress objects like this one and configures itself to route incoming
+# traffic accordingly. Without an Ingress, the Service is only reachable
+# from inside the cluster.
+# -----------------------------------------------------------------------------
+
+apiVersion: networking.k8s.io/v1   # The API group for Ingress objects.
+                                   # Note: "networking.k8s.io/v1" replaced the
+                                   # older "extensions/v1beta1" in Kubernetes
+                                   # 1.19. The v1 schema is the only one
+                                   # you should write today.
+
+kind: Ingress                      # The object type. An Ingress is a routing
+                                   # rule consumed by an Ingress Controller --
+                                   # the rules don't do anything on their own.
+
+metadata:
+  name: credit-serving             # Object name (used in `kubectl get ingress`).
+  labels:
+    app: credit-serving
+
+spec:
+  ingressClassName: nginx          # Which controller should pay attention to
+                                   # this Ingress. minikube's addon installs
+                                   # itself as the "nginx" IngressClass.
+                                   # If you had multiple controllers (e.g.
+                                   # nginx for public traffic, traefik for
+                                   # internal), this would route each Ingress
+                                   # to the right one.
+
+  rules:                           # The routing table. Each rule maps
+                                   # (host, path) -> backend Service.
+    - host: credit.local           # The hostname the request must have. The
+                                   # nginx controller reads the Host header on
+                                   # incoming requests and only applies this
+                                   # rule when the header matches. We'll point
+                                   # `credit.local` at 127.0.0.1 in /etc/hosts
+                                   # (Windows equivalent) so it resolves
+                                   # locally.
+
+      http:
+        paths:
+          - path: /                # Match any URL path.
+            pathType: Prefix       # "Prefix" means "anything starting with /".
+                                   # Other options: "Exact" (only the exact
+                                   # path) or "ImplementationSpecific" (let
+                                   # the controller decide).
+
+            backend:
+              service:
+                name: credit-serving   # Send matching traffic to the
+                                       # credit-serving Service we created
+                                       # in service.yaml.
+                port:
+                  number: 80           # Use the Service's port 80 (which
+                                       # forwards to the pod's 8000).

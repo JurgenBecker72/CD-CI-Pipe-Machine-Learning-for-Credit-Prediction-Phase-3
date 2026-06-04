@@ -1,0 +1,68 @@
+# kubernetes/hpa.yaml
+# -----------------------------------------------------------------------------
+# Horizontal Pod Autoscaler for the credit scoring API. Declares a control
+# loop that adjusts the Deployment's replica count based on observed CPU
+# utilisation. Implements the elastic-scaling story for the serving tier.
+# -----------------------------------------------------------------------------
+
+apiVersion: autoscaling/v2      # The current stable HPA API. v2 supports
+                                # multiple metrics and per-direction
+                                # behaviour; v1 was CPU-only.
+
+kind: HorizontalPodAutoscaler
+
+metadata:
+  name: credit-serving          # Object name (kubectl get hpa credit-serving).
+  labels:
+    app: credit-serving
+
+spec:
+  # The Deployment this HPA owns. It will only ever adjust the replica
+  # count of *this* Deployment -- one HPA per workload.
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: credit-serving
+
+  minReplicas: 1                # Always keep at least one pod running.
+                                # Even idle, the service stays warm.
+
+  maxReplicas: 3                # Cap at 3 to keep your laptop from
+                                # melting. A production cluster would
+                                # set this much higher (20, 50, 100)
+                                # based on the node fleet's capacity.
+
+  metrics:                      # The signals the HPA watches. You can
+                                # combine multiple (CPU + memory + custom)
+                                # and it'll scale to satisfy the most
+                                # demanding one.
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization     # "Utilization" = percent of the request.
+                                # The Deployment's pod requests 200m CPU,
+                                # so 50% utilisation = 100m sustained.
+          averageUtilization: 50    # When the *average* CPU across all pods
+                                    # crosses 50%, add replicas. When it
+                                    # falls below, remove them.
+
+  # behavior controls *how aggressive* the HPA is about scaling.
+  # The defaults are conservative (good for production stability). We
+  # override them for a more visible demo: scale up immediately on
+  # pressure, but wait a full minute before scaling back down to avoid
+  # thrashing if traffic spikes are bursty.
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0     # React to load instantly.
+      policies:
+        - type: Pods
+          value: 2                       # Add up to 2 pods per 15 seconds.
+          periodSeconds: 15
+    scaleDown:
+      stabilizationWindowSeconds: 60    # Wait 60s after CPU drops before
+                                        # removing pods. Avoids flapping.
+      policies:
+        - type: Pods
+          value: 1                       # Remove at most 1 pod per 30s.
+          periodSeconds: 30

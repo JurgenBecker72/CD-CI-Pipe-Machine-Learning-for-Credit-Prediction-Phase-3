@@ -1,0 +1,41 @@
+# kubernetes/service.yaml
+# -----------------------------------------------------------------------------
+# Stable internal address for the credit scoring API. Pods come and go (and
+# get fresh IPs each time); the Service holds a permanent in-cluster DNS
+# name and load-balances incoming traffic across whichever pods are
+# currently alive AND have passed their readiness probe.
+# -----------------------------------------------------------------------------
+
+apiVersion: v1               # "v1" is the original Kubernetes API. Services
+                             # have been in it from the beginning.
+
+kind: Service                # The object type. A Service abstracts away the
+                             # set of pods behind it -- callers get a stable
+                             # name; Kubernetes handles the routing.
+
+metadata:
+  name: credit-serving       # In-cluster DNS name. Inside the cluster, this
+                             # Service is reachable at
+                             # `credit-serving.default.svc.cluster.local` --
+                             # or just `credit-serving` from any pod in the
+                             # same namespace.
+  labels:
+    app: credit-serving
+
+spec:
+  type: ClusterIP            # Internal-only address (no external IP, no
+                             # NodePort). The Ingress in G.4 will expose this
+                             # to the outside world. ClusterIP is the simplest
+                             # service type and the right default.
+
+  selector:                  # Which pods to send traffic to. Any pod with
+    app: credit-serving      # this label gets included in the load balancing
+                             # rotation -- but only if it's also Ready (passing
+                             # its readiness probe). Pods that aren't Ready
+                             # are silently held out.
+
+  ports:
+    - port: 80               # Port the Service listens on.
+      targetPort: 8000       # Port to forward to inside the pod (where uvicorn
+                             # is listening per the Deployment's containerPort).
+      protocol: TCP
