@@ -1,0 +1,105 @@
+# kubernetes/deployment.yaml
+# -----------------------------------------------------------------------------
+# Desired-state declaration for the credit scoring API. Tells Kubernetes:
+# run a replica of credit-serving:dev, expose port 8000, point it at the
+# MLflow server running on the host machine, and gate traffic on /readyz
+# until the model bundle is hot.
+# -----------------------------------------------------------------------------
+
+apiVersion: apps/v1          # The API group + version this object uses.
+                             # "apps/v1" is the stable Deployment API.
+
+kind: Deployment             # Type of Kubernetes object. Deployment manages
+                             # a ReplicaSet which manages Pods. It also does
+                             # rolling updates automatically when the spec
+                             # changes.
+
+metadata:
+  name: credit-serving       # Object name. Used in `kubectl get deploy credit-serving`.
+  labels:
+    app: credit-serving      # Free-form key/value tag attached to the Deployment
+                             # itself. Useful for `kubectl get deploy -l app=...`.
+
+spec:
+  replicas: 1                # How many pods should be running. We start at 1
+                             # to keep resource pressure low; the HPA in G.5 will
+                             # autoscale this.
+
+  selector:                  # How this Deployment finds the pods it "owns".
+    matchLabels:
+      app: credit-serving    # Any pod with label app=credit-serving is mine.
+
+  template:                  # Pod template — every pod the Deployment creates
+                             # is built from this spec.
+    metadata:
+      labels:
+        app: credit-serving  # Pods get this label, so the selector above matches.
+
+    spec:
+      containers:
+        - name: api          # Container name inside the pod. Used in
+                             # `kubectl logs <pod> -c api`.
+
+          image: credit-serving:dev    # The image we built in G.2 and loaded
+                                       # into minikube. Format is name:tag.
+
+          imagePullPolicy: IfNotPresent  # Don't try to pull from a remote registry --
+                                         # use whatever's already in the local
+                                         # docker daemon. Without this, kubelet
+                                         # would try to fetch from Docker Hub
+                                         # and fail (the image only exists locally).
+
+          ports:
+            - containerPort: 8000      # The port uvicorn listens on inside the
+                                       # container. This is informational --
+                                       # it doesn't *publish* the port; the
+                                       # Service in service.yaml does that.
+
+          env:                         # Environment variables the container sees.
+            - name: MLFLOW_TRACKING_URI
+              value: "http://host.minikube.internal:5000"
+              # `host.minikube.internal` is a special DNS name minikube provides
+              # to pods that resolves to the host machine. The MLflow container
+              # is running on the host via docker-compose, listening on :5000.
+              # If you wrote `http://localhost:5000` here, the pod would try to
+              # connect to *itself* on port 5000 and fail.
+
+          # Liveness probe -- "is the process alive?" If this fails, kubelet
+          # kills the container and the Deployment spawns a replacement.
+          # We use /healthz which returns 200 as long as the process can answer.
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 10    # Wait 10s after pod start before probing.
+            periodSeconds: 10          # Probe every 10s thereafter.
+
+          # Readiness probe -- "is the model loaded and ready to serve?"
+          # If this fails, kubelet doesn't kill the pod, but the Service
+          # stops sending traffic to it until the probe goes green again.
+          # This is the gate that protects rolling deploys: a new pod doesn't
+          # receive traffic until its model bundle is fully loaded from MLflow.
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8000
+            initialDelaySeconds: 5     # Start checking earlier (loader runs
+                                       # during FastAPI lifespan).
+            periodSeconds: 5
+            failureThreshold: 30       # Allow 30 * 5s = 150s before giving up.
+                                       # Bundle download from MLflow can take
+                                       # 30-90s the first time; this gives plenty
+                                       # of headroom without being so generous
+                                       # that real failures hide.
+
+          resources:                   # Resource requests + limits. Requests
+                                       # are what the scheduler reserves on a
+                                       # node; limits are hard caps.
+            requests:
+              cpu: "200m"              # 200 milli-cores = 0.2 of one CPU.
+              memory: "512Mi"          # 512 MB. The model alone is small but
+                                       # MLflow client + scipy + sklearn warm up
+                                       # to ~400MB resident.
+            limits:
+              cpu: "1000m"             # Cap at 1 full CPU per pod.
+              memory: "1Gi"            # OOM-kill the pod if it exceeds 1 GB.
