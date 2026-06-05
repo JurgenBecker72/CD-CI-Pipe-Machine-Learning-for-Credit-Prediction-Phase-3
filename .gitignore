@@ -64,6 +64,15 @@ models/*
 !models/.gitkeep
 archive/**/models/*
 
+# ---------- Cloud-deploy sealed model bundle ----------
+# Produced by `scripts/export_model_bundle.py` at deploy time, baked into
+# the cloud serving image. Recomputable from MLflow; don't commit the
+# artefacts themselves. Keep .gitkeep so the directory always exists --
+# the serving Dockerfile COPY needs a valid source path even when local
+# (online-mode) builds don't populate it.
+model-bundle/*
+!model-bundle/.gitkeep
+
 # ---------- Generated reports ----------
 reports/*.csv
 reports/*.json

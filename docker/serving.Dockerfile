@@ -46,6 +46,14 @@ COPY src/paths.py ./src/paths.py
 COPY src/settings.py ./src/settings.py
 COPY pyproject.toml ./pyproject.toml
 
+# Sealed model bundle for offline serving (used by the cloud deploy where
+# pods have no live MLflow connection). Produced by
+# `scripts/export_model_bundle.py`. The COPY is conditional on the
+# directory existing in the build context -- local-dev builds that
+# don't intend to use offline mode can omit the directory, in which
+# case this layer is empty and the loader's online MLflow path is used.
+COPY model-bundle /app/model-bundle
+
 ENV PATH="/app/.venv/bin:${PATH}" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

@@ -1,0 +1,81 @@
+# kubernetes/cloud/deployment.yaml
+# -----------------------------------------------------------------------------
+# Cloud-targeted Deployment for the credit scoring API. Differs from the
+# local manifest in three ways:
+#
+#   1. The image is pulled from Azure Container Registry rather than
+#      minikube's local docker daemon.
+#   2. There is no MLflow tracking server reachable from the pod, so the
+#      loader runs in offline mode against the sealed bundle baked into
+#      the image at build time (MODEL_BUNDLE_PATH).
+#   3. ImagePullPolicy is left at the default (IfNotPresent for tagged
+#      images, Always for :latest) -- not the IfNotPresent override the
+#      local manifest needs to avoid trying to pull from Docker Hub.
+# -----------------------------------------------------------------------------
+
+apiVersion: apps/v1
+kind: Deployment
+
+metadata:
+  name: credit-serving
+  labels:
+    app: credit-serving
+
+spec:
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: credit-serving
+
+  template:
+    metadata:
+      labels:
+        app: credit-serving
+
+    spec:
+      containers:
+        - name: api
+
+          # Pulls from the private ACR. AKS was created with --attach-acr
+          # so the cluster's managed identity has pull permissions
+          # automatically -- no imagePullSecret needed.
+          image: creditscoringjbecker.azurecr.io/credit-serving:v6
+
+          ports:
+            - containerPort: 8000
+
+          env:
+            # Offline mode. The loader sees this and reads the model + sidecars
+            # from local files instead of contacting an MLflow tracking server.
+            # The path is where the Dockerfile copies the exported bundle.
+            - name: MODEL_BUNDLE_PATH
+              value: "/app/model-bundle"
+
+          # Liveness probe -- the process is up.
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+
+          # Readiness probe -- the model bundle is loaded. Offline mode is
+          # fast (no network) so the original generous failureThreshold is
+          # overkill. We still give a few seconds for FastAPI's lifespan
+          # hook to read the bundle off disk.
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 12
+
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
