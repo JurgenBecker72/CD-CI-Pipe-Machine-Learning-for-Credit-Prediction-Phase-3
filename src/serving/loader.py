@@ -45,8 +45,9 @@ MEDIANS_ARTIFACT_PATH = "medians"
 # Offline mode -- when this env var points at a directory produced by
 # `scripts/export_model_bundle.py`, the loader reads model + sidecars
 # from local files instead of contacting an MLflow tracking server.
-# Used by the cloud serving image (Phase G cloud deploy) which bakes a
-# sealed snapshot of one model version into the container at build time.
+# Used by the cloud serving image, which bakes a sealed snapshot of
+# one model version into the container at build time so pods do not
+# need a live connection to a tracking server at runtime.
 MODEL_BUNDLE_PATH_ENV = "MODEL_BUNDLE_PATH"
 
 # Used when the registered model predates the band_thresholds.json artefact

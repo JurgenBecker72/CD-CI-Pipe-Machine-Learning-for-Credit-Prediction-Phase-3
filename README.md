@@ -9,6 +9,8 @@ Building on these insights, the second phase extended the work by exploring addi
 
 In the third phase, we focus on building a complete end-to-end alternative credit scoring pipeline. This production-oriented system integrates **psychometric (DRA) assessments** with **traditional credit bureau features** to predict loan default probability, calibrate these predictions to a scorecard, and assign A–E risk bands. The project is engineered for a smooth transition from local development to a CI/CD-driven analytics product. It provides a clean, reproducible, and leakage-proof path from raw psychometric and credit-bureau data all the way to scored customers. The ultimate goal is a fully tested, reproducible source environment that can be promoted to production with confidence. Various ML techniques, including XGBoost and Random Forests, are used to define and compile features. These final engineered features are included in the logistic regression model, which is calibrated on actual bad rates to estimate the Probability of Default. Finally, SHAP analysis is conducted for traceback and compliance.
 
+The pipeline is also packaged for real deployment: the calibrated scorecard is served by a FastAPI inference service in a Docker image, with model artefacts and persisted sidecars (band thresholds, training medians) managed through an MLflow model registry. The service is deployed to Kubernetes locally on minikube and to a managed cloud cluster on Azure AKS, with the same manifests covering rolling updates, readiness probes that gate traffic on model warm-up, ingress / load-balancer access, and horizontal pod autoscaling.
+
 ---
 
 ## Dataset
@@ -90,6 +92,54 @@ uv run python -m pipelines.run_pipeline  # the pipeline
 > `uv sync --all-extras` to pull everything for full local-stack work.
 
 > **Note** — `pyproject.toml` is the single source of truth for dependencies. The legacy `requirements.txt` was removed in the Phase A cleanup; install everything through `uv sync`.
+
+### 1g. Kubernetes deployment (Phase G)
+
+Phase G wraps the serving image in a real Kubernetes deployment. The
+same manifests run on minikube locally and on Azure Kubernetes Service
+in the cloud; only the image source, the Service type, and the env
+vars change between environments.
+
+**Local — minikube**
+
+```powershell
+.\scripts\k8s-deploy.ps1
+```
+
+Builds the image, loads it into minikube, applies every manifest in
+`kubernetes/`, and waits for the Deployment to be Ready. Reach the
+API via `http://credit.local/` after starting `minikube tunnel` in an
+admin shell (see [kubernetes/README.md](kubernetes/README.md) for the
+hosts-file and tunnel setup). Includes a Horizontal Pod Autoscaler
+that scales between 1 and 3 replicas to keep CPU at 50%.
+
+**Cloud — Azure AKS**
+
+```powershell
+.\scripts\azure-deploy.ps1 -CreateInfra   # first-time setup
+.\scripts\azure-deploy.ps1                # subsequent deploys
+```
+
+Provisions a resource group, Azure Container Registry, and a single-node
+AKS cluster. Exports the production model bundle from MLflow, builds the
+image with the bundle baked in, pushes to ACR, applies the cloud manifests
+in `kubernetes/cloud/`, and prints the public IP. The pod loads the
+model from a sealed local directory rather than from MLflow, so it has
+no live dependency on a tracking server -- a common production pattern
+for read-only inference. See
+[kubernetes/cloud/README.md](kubernetes/cloud/README.md) for the runbook
+and the cost / cleanup story.
+
+**What's shared between local and cloud**
+
+Both Deployments share the same probes (`/healthz`, `/readyz`), the
+same Horizontal Pod Autoscaler, and the same in-pod scoring service.
+The serving image's `loader.py` dispatches between online (MLflow)
+and offline (sealed bundle) modes on the `MODEL_BUNDLE_PATH` env
+var; both paths return the same `ModelBundle` dataclass and produce
+the same response shape on `/v1/score`.
+
+---
 
 ### 1f. Scoring service with FastAPI (Phase F)
 
@@ -467,7 +517,22 @@ Machine-Learning-For-Credit-Prediction-Phase-3/
 │   ├── smoke_score.ps1            # End-to-end smoke test for the scoring API (Phase F)
 │   ├── refresh_smoke_payload.py   # Regenerate the realistic smoke fixture (Phase F)
 │   ├── smoke_payload.json         # Committed fixture loaded by smoke_score.ps1 (Phase F)
-│   └── probe_model.py             # Direct model invocation, bypasses the API (Phase F)
+│   ├── probe_model.py             # Direct model invocation, bypasses the API (Phase F)
+│   ├── k8s-deploy.ps1             # One-command minikube deploy (Phase G)
+│   ├── export_model_bundle.py     # Snapshot MLflow model → flat directory (Phase G cloud)
+│   └── azure-deploy.ps1           # End-to-end AKS deploy: build → push → apply (Phase G cloud)
+├── kubernetes/
+│   ├── README.md                  # Local Kubernetes runbook + what's out of scope
+│   ├── deployment.yaml            # 1-pod Deployment, MLflow-backed loader, probes (Phase G)
+│   ├── service.yaml               # ClusterIP fronting the pods (Phase G)
+│   ├── ingress.yaml               # nginx-ingress rule for credit.local (Phase G)
+│   ├── hpa.yaml                   # Autoscale 1→3 replicas at 50% CPU (Phase G)
+│   └── cloud/
+│       ├── README.md              # AKS runbook + cost / cleanup notes
+│       ├── deployment.yaml        # Pulls from ACR, offline loader via MODEL_BUNDLE_PATH
+│       ├── service.yaml           # type: LoadBalancer → Azure-provisioned public IP
+│       └── hpa.yaml               # Identical to local; autoscaling primitive is portable
+├── model-bundle/                  # .gitignored — sealed snapshot built by export_model_bundle.py
 ├── src/
 │   ├── config.py                  # Static project knowledge — target, IDs, leakage, feature groups
 │   ├── paths.py                   # Anchored path resolution
