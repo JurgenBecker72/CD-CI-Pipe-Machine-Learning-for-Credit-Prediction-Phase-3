@@ -1,0 +1,36 @@
+# kubernetes/cloud/service.yaml
+# -----------------------------------------------------------------------------
+# Cloud Service for the credit scoring API. Differs from the local
+# manifest in one critical way:
+#
+#   type: LoadBalancer (was ClusterIP)
+#
+# When type is LoadBalancer, AKS asks Azure to provision a real public IP
+# and a real Azure Load Balancer in front of it -- the same machinery
+# that fronts production traffic for any real Azure-hosted service. The
+# external IP appears in `kubectl get svc credit-serving` after ~2-3
+# minutes of provisioning. Anyone with that IP can reach the API over
+# the public internet.
+#
+# Locally the equivalent of LoadBalancer is `minikube tunnel` plus a
+# hosts-file entry; in cloud it is the cloud's actual networking.
+# -----------------------------------------------------------------------------
+
+apiVersion: v1
+kind: Service
+
+metadata:
+  name: credit-serving
+  labels:
+    app: credit-serving
+
+spec:
+  type: LoadBalancer
+
+  selector:
+    app: credit-serving
+
+  ports:
+    - port: 80                # External port on the public IP.
+      targetPort: 8000        # Where uvicorn listens inside the pod.
+      protocol: TCP
